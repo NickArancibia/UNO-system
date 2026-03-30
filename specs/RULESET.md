@@ -125,7 +125,7 @@ Only the **player required to draw the four cards** (the next player in turn ord
 
 ### Process
 
-1. The challenger declares a challenge before drawing any cards.
+1. The challenger must declare the challenge **within 5 seconds** of the Wild Draw Four being played, and **before drawing any cards**. The challenge window closes when the 5-second timer expires or the player begins drawing, whichever comes first.
 2. The player who played the Wild Draw Four must **reveal their entire hand** to the challenger.
 
 ### Outcomes
@@ -181,11 +181,18 @@ Jump-in is an **active rule** on this platform.
 - A player **must** call "Uno!" at the moment they play their second-to-last card, leaving exactly one card in their hand.
 - The call must occur as part of, or immediately following, the card play action.
 
-### Failure to Call
+### Challenge Window
 
-- If a player fails to call "Uno!" and is **caught** before the next player begins their turn, they must draw **2 cards** as a penalty.
-- **Who may catch**: only the **immediate next player in turn order** may issue a catch. No other player may issue it.
-- The catch window closes the moment the next player begins their turn (i.e., submits any game action: playing a card, drawing, challenging, or jumping in).
+- The moment a player plays their second-to-last card, a **5-second challenge window** opens.
+- During this window, **any opponent** may challenge whether the player called "Uno!".
+- The window closes early the moment the next player begins their turn (i.e., submits any game action: playing a card, drawing, challenging, or jumping in).
+- **Concurrency**: if multiple opponents attempt to challenge simultaneously, only the **first valid challenge received by the server** is processed. All others are rejected.
+
+### Outcomes
+
+- If the challenged player **did not** call "Uno!" (guilty): they draw **2 penalty cards**. The challenger is not penalized.
+- If the challenged player **did** correctly call "Uno!" (innocent): the **challenger** draws **2 penalty cards**.
+- If the window expires with no challenge, the player retains their one-card hand with no penalty.
 
 ---
 

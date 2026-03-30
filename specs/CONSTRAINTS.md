@@ -44,13 +44,14 @@ The lobby phase determines when a game starts. The system uses a **presence-base
 ### 2.3 Turn Timer
 
 - Each player's turn has a **45-second turn timer**.
-- When the timer expires, the system automatically executes **Option B** on the player's behalf (draw one card, end turn). This counts as a turn taken.
+- When the timer expires for a **connected** player, the system automatically executes **Option B** on the player's behalf (draw one card, end turn). This counts as a turn taken. For disconnected players, turns are skipped instead (see Section 2.5).
 - The AFK counter increments each time the turn timer expires for a player **consecutively**.
 - The AFK counter **resets to zero** after any successful action submitted by the player.
 
 ### 2.4 AFK Detection & Automatic Forfeit
 
-- If a player's turn timer expires **3 consecutive times**, they are considered **AFK** and are **automatically forfeited** from the game.
+- If a connected player's turn timer expires **3 consecutive times**, they are considered **AFK** and are **automatically forfeited** from the game.
+- The AFK counter **only accumulates for connected players**. Turns skipped due to disconnection do not count toward the AFK counter.
 - An AFK forfeit is treated identically to a voluntary forfeit in all respects (Elo, tournament elimination, etc.).
 
 ### 2.5 Disconnection & Voluntary Forfeit
@@ -58,17 +59,18 @@ The lobby phase determines when a game starts. The system uses a **presence-base
 - A player may voluntarily disconnect at any time, which **immediately forfeits** their participation in the current game.
 - If a player **loses connection** without voluntarily forfeiting:
   - They remain registered in the game.
-  - Their turn timer continues to run normally.
-  - They may **reconnect** and resume participation as long as they have not yet been forfeited via the AFK mechanism.
-  - Once forfeited (AFK), reconnection is not possible for that game.
-- Any forfeit — voluntary or AFK — is permanent. A forfeited player cannot re-enter the same game.
+  - A **60-second reconnection window** begins immediately.
+  - During the window, the disconnected player's **turns are skipped** (as if they passed). The turn timer does not run and the AFK counter does not accumulate.
+  - If the window expires, the player is **automatically forfeited**. If the window expires during the player's turn, the forfeit is immediate.
+  - A player who **reconnects within the window** resumes with their original hand intact. Their AFK counter resets to zero.
+- Any forfeit — voluntary, AFK, or reconnection-window expiry — is permanent. A forfeited player cannot re-enter the same game.
 
 ### 2.6 Effect of a Forfeit on the Game
 
 - When a player forfeits, **their hand is discarded** and removed from the game. Their cards are not scored.
 - The game continues normally with the remaining players.
 - If a forfeit leaves only **1 active player** in the room, that player is declared the **winner of the current round** immediately.
-- If a forfeit leaves **0 active players**, the game is voided.
+- If a forfeit leaves **0 active players**, the game is **voided**: no scores are recorded and **no Elo changes are applied** to any player.
 
 ### 2.7 Room Lifecycle States
 
@@ -125,29 +127,31 @@ The lobby phase determines when a game starts. The system uses a **presence-base
 
 ## 5. Elo & Ranking System
 
-### 5.1 Elo Rating
+### 5.1 Elo Ratings
 
-- Every player has a single **global Elo rating**.
-- There is no separate casual vs. tournament Elo — one number covers all game modes.
-- **Starting Elo**: 1,000 (for all newly registered players).
-- Elo is updated **after a full game completes** (not after individual rounds).
+Every player has two separate Elo ratings:
 
-### 5.2 Elo Calculation Inputs
+- **Global Elo**: applies to **casual (ad-hoc) games only**. Starting value: **1,000** for all new players. Updated after each completed casual game.
+- **Tournament-placement Elo**: applies to **tournament games only**. See [TOURNAMENT_RULES.md — Section 8](./TOURNAMENT_RULES.md) for details.
 
-- The Elo update formula takes as inputs:
+### 5.2 Casual Elo Calculation Inputs
+
+- The casual Elo update formula takes as inputs:
   - **Finish position** of each player (1st, 2nd, ... last).
   - **Cumulative points** scored by each player during the game.
 - The exact multi-player Elo formula is to be defined during the design phase, but must account for both position and score relative to all opponents in the same game.
 
 ### 5.3 Forfeit Impact on Elo
 
-- Any forfeit — whether voluntary disconnect or AFK — counts as a **full loss** for Elo purposes (last place finish, zero points).
+- Any forfeit — whether voluntary disconnect, AFK, or reconnection-window expiry — counts as a **full loss** for Elo purposes (last place finish, zero points). This applies to both casual Elo and tournament-placement Elo.
 - There is no reduced penalty for early disconnection.
+- **Exception**: if a game is voided (all players forfeit), no Elo changes are applied to any player (see Section 2.6).
 
-### 5.4 Leaderboard
+### 5.4 Leaderboards
 
-- A **global leaderboard** ranks all players by their current Elo rating.
-- There are **no named ranking tiers** (e.g., no Bronze/Silver/Gold). Elo is expressed as a plain numeric value.
+- A **global casual leaderboard** ranks all players by their current casual Elo rating.
+- A **separate tournament leaderboard** ranks all players by their current tournament-placement Elo rating.
+- There are **no named ranking tiers** (e.g., no Bronze/Silver/Gold). Both ratings are expressed as plain numeric values.
 
 ---
 

@@ -7,82 +7,97 @@ This document defines all rules specific to tournament mode. General platform ru
 ## 1. Overview
 
 - Tournaments support up to **1,000,000 players**.
-- A tournament consists of **up to 6 sequential phases**, each reducing the active player pool by a factor of 10. The actual number of phases is computed dynamically from the confirmed player count at tournament start (see Section 2).
-- There are **no fixed brackets**. Before each phase, all qualifiers are **reshuffled** and distributed randomly into new rooms. Players never face the same seeded opponents.
-- Only **1st place** in each room advances to the next phase.
-- The last player standing after the final phase is the **Tournament Champion**.
+- A tournament consists of **sequential elimination rounds**, each reducing the active player pool by approximately 70%. The actual number of rounds is computed dynamically from the confirmed player count at tournament start (see Section 2).
+- There are **no fixed brackets**. Before each round, all qualifiers are **reshuffled** and distributed randomly into new rooms. Players never face the same seeded opponents.
+- In each room, players compete in a **best-of-three match** (up to 3 individual games). The **top 3 players by game wins** advance to the next round; the rest are eliminated.
+- The tournament ends when **10 or fewer players remain**, at which point a **Final Room** is created. The winner of the Final Room is the **Tournament Champion**.
 
 ---
 
-## 2. Phase Structure
+## 2. Round Structure
 
-The number of phases is **not fixed at 6**. It is computed at tournament start from the confirmed player count using the formula:
+The number of rounds is computed at tournament start from the confirmed player count using the formula:
 
-> **phases = ceil(log₁₀(confirmed_players))**
+> **rounds = ceil(log(confirmed\_players / 10) / log(10/3))**
 
-The full 6-phase table (maximum scale) is:
+This reflects the approximately 3× reduction per round (top 3 out of 10 advance).
 
-| Phase | Players entering | Rooms | Players per room | Qualifiers |
-|---|---|---|---|---|
-| 1 | 1,000,000 | 100,000 | 10 | 100,000 |
-| 2 | 100,000 | 10,000 | 10 | 10,000 |
-| 3 | 10,000 | 1,000 | 10 | 1,000 |
-| 4 | 1,000 | 100 | 10 | 100 |
-| 5 | 100 | 10 | 10 | 10 |
-| 6 | 10 | 1 | 10 | 1 (Champion) |
+The full table for maximum scale (1,000,000 players) is:
 
-For example, a tournament with 5,000 confirmed players begins at Phase 3 (the first phase whose input scale fits 5,000) and runs 4 phases to a champion.
+| Round | Players entering | Rooms | Qualifiers |
+|---|---|---|---|
+| 1 | 1,000,000 | 100,000 | 300,000 |
+| 2 | 300,000 | 30,000 | 90,000 |
+| 3 | 90,000 | 9,000 | 27,000 |
+| 4 | 27,000 | 2,700 | 8,100 |
+| 5 | 8,100 | 810 | 2,430 |
+| 6 | 2,430 | 243 | 729 |
+| 7 | ~729 | ~73† | ~219 |
+| 8 | ~219 | ~22† | ~66 |
+| 9 | ~66 | ~7† | ~21 |
+| 10 | ~21 | ~2–3† | ~7–9 |
+| **Final** | **≤10** | **1** | **1 (Champion)** |
 
-- Rooms always target **10 players** (the platform maximum), but may run with as few as **2 players** if insufficient qualifiers are available for a full room.
-- Player counts entering each phase may be lower than projected if players forfeit, disconnect, or fail to appear. The phase proceeds regardless.
-- **Minimum to start**: 1,000 confirmed players, guaranteeing at least 3 phases.
+†From round 7 onward, player counts are not exact multiples of 10. Partial rooms are formed and all active players in a partial room advance (see Section 4).
+
+- Rooms always target **10 players** but may run with as few as **2 players** if insufficient qualifiers are available.
+- Player counts entering each round may be lower than projected due to forfeit, disconnection, or no-shows.
+- **Minimum to start**: 1,000 confirmed players, guaranteeing at least 5 competitive rounds before the Final.
 
 ---
 
 ## 3. Match Format in Tournaments
 
-Tournament matches use a **modified win condition** compared to casual games:
+Each room plays a **best-of-three match**: up to 3 individual games. Each individual game uses a **modified win condition** compared to casual:
 
-- A player wins the match by being the **first to either**:
+- A player wins a **game** by being the first to either:
   1. **Empty their hand** (play their last card), OR
-  2. **Reach 400 cumulative points** across rounds.
-- Both conditions are checked at the end of each round. Whichever is triggered first ends the match immediately.
+  2. **Reach 400 cumulative points** across rounds within that game.
+- Both conditions are checked at the end of each round. Whichever is triggered first ends the game immediately.
 - Scoring per round follows [RULESET.md — Section 9](./RULESET.md).
-- These dual win conditions are designed to keep tournament matches fast and to reward consistent point accumulation.
+
+The match proceeds as follows:
+1. All players in the room play up to 3 games.
+2. After all games are completed (or the match timeout is reached — see Section 3.1), each player's **game win count** (0, 1, 2, or 3) is recorded.
+3. The **top 3 players by game wins** advance (see Section 4 for tiebreaks and partial rooms).
 
 ### 3.1 Match Timeout
 
-- Each tournament room has a **20-minute hard timeout**.
-- If the timeout is reached before any player satisfies a win condition, the match is resolved immediately:
-  1. **Most cumulative points** → winner.
+- Each tournament room has a **20-minute hard timeout** covering the **entire match** (all games combined).
+- If the timeout is reached during an active game, that game is resolved immediately:
+  1. **Most cumulative points** → winner of that game.
   2. Tiebreak (equal points): **fewest cards remaining in hand** → winner.
-  3. Second tiebreak (equal cards): **earliest turn order position** (the player closest to 1st in the turn sequence) → winner.
+  3. Second tiebreak (equal cards): **earliest turn order position** (closest to 1st in the current turn sequence) → winner.
+- After timeout resolution, game wins are tallied and advancement is determined normally.
 
 ---
 
 ## 4. Advancement
 
-- Only **1st place** per room qualifies for the next phase.
-- 2nd place and below are eliminated from the tournament.
-- Eliminated players and winners who are waiting for their next phase may freely **spectate any active room** in the current phase.
+- The **top 3 players by game wins** within a match advance to the next round.
+- **Tiebreak rules** (when two or more players are tied on game wins):
+  1. **Lower cumulative card-point total** across the tied games → advances.
+  2. Still tied: **earliest time of final game completion** → advances.
+- **Partial rooms**: if a room ends with **3 or fewer active players** (due to forfeits or disconnections during the match), all active players advance regardless of win count.
+- Players eliminated from the tournament may freely **spectate any active room** in the current or subsequent rounds.
 
 ---
 
-## 5. Phase-Start Thresholds (Early Room Formation)
+## 5. Round-Start Thresholds (Early Room Formation)
 
-The system does not wait for **all** rooms in the current phase to finish before forming rooms for the next phase. Rooms are formed progressively as qualifiers arrive.
+The system does not wait for **all** rooms in the current round to finish before forming rooms for the next round. Rooms are formed progressively as qualifiers arrive.
 
-However, to ensure sufficient randomness in room assignments, the system waits until a **minimum number of qualifiers** are available before beginning room formation for the next phase:
+To ensure sufficient randomness in room assignments, the system waits until a **minimum number of qualifiers** are available before beginning room formation for the next round:
 
-| Phase completing | Qualifiers expected | Minimum to begin forming next-phase rooms |
+| Round completing | Qualifiers expected | Minimum to begin forming next-round rooms |
 |---|---|---|
-| 1 | 100,000 | 1,000 (1%) |
-| 2 | 10,000 | 1,000 (10%) |
-| 3 | 1,000 | 100 (10%) |
-| 4 | 100 | 50 (50%) |
-| 5 | 10 | 10 (100% — wait for all) |
+| 1 | 300,000 | 3,000 (1%) |
+| 2 | 90,000 | 9,000 (10%) |
+| 3 | 27,000 | 2,700 (10%) |
+| 4 | 8,100 | 4,050 (50%) |
+| 5 | 2,430 | 2,430 (100% — wait for all) |
+| 6+ | ≤729 | 100% — wait for all |
 
-- Phase 6 only has 1 room and always waits for all 10 qualifiers.
 - Once the threshold is reached, the matchmaking system begins assembling rooms immediately, maximizing player count per room before triggering the lobby timer.
 - Players who qualify after rooms have already been formed will be placed into partially-filled rooms or new rooms as availability dictates.
 
@@ -103,29 +118,43 @@ Tournament rooms use a **matchmaking-driven lobby**:
 
 Tournament disconnection follows the same rules as casual games ([CONSTRAINTS.md — Section 2.4 and 2.5](./CONSTRAINTS.md)), with one additional consequence:
 
-- **Any forfeit** — whether voluntary disconnect or AFK (3 consecutive turn timer expirations) — **permanently eliminates the player from the current tournament**. They do not re-enter any subsequent phase.
-- A forfeiting player's hand is discarded. The room continues with remaining players.
+- **Any forfeit** — whether voluntary disconnect, AFK, or reconnection-window expiry — **permanently eliminates the player from the current tournament**. They do not re-enter any subsequent round.
+- A forfeiting player's hand is discarded. The match continues with remaining players.
+- If a forfeit reduces the room to **3 or fewer active players**, all remaining active players advance (see Section 4).
 - The eliminated player may continue to spectate any active rooms in the tournament.
 
 ---
 
-## 8. Tournament Creation & Registration
+## 8. Tournament-Placement Elo
 
-- **Who creates tournaments**: platform admins only. Tournaments may be created manually or scheduled in advance (e.g., a recurring Christmas tournament always starting on December 25th).
-- **Registration**: players must register for a tournament before it begins. A registration window opens and closes at defined times set by the tournament organizer.
-- **Minimum players to start**: **1,000 registered and active players**. A tournament does not begin if fewer than 1,000 players are confirmed at start time. This guarantees a minimum of 3 meaningful competitive phases.
-- **Concurrent participation**: a player may only be actively participating in one tournament at a time (they may spectate others).
-- Players who register but do not appear for their Phase 1 room are treated as having forfeited — they are removed from the bracket before room formation to avoid empty seats.
+- Every player has a **tournament-placement Elo** rating, entirely separate from the casual global Elo.
+- **Starting value**: 1,000 for all newly registered players.
+- Elo is updated **after every individual game** within a match (not after the full match or after the tournament ends).
+- The formula must account for: consecutive game wins within the current match, the round reached in the tournament, and cumulative points scored in the game. The exact multi-factor formula is to be defined during the design phase.
+- Forfeits (voluntary, AFK, or reconnection-window expiry) within a tournament game count as a **last-place finish** for tournament-placement Elo purposes.
 
 ---
 
-## 9. Summary of Tournament-Specific Rule Differences vs. Casual
+## 9. Tournament Creation & Registration
+
+- **Who creates tournaments**: platform admins only. Tournaments may be created manually or scheduled in advance (e.g., a recurring Christmas tournament always starting on December 25th).
+- **Registration**: players must register for a tournament before it begins. A registration window opens and closes at defined times set by the tournament organizer.
+- **Minimum players to start**: **1,000 registered and active players**. A tournament does not begin if fewer than 1,000 players are confirmed at start time.
+- **Concurrent participation**: a player may only be actively participating in one tournament at a time (they may spectate others).
+- Players who register but do not appear for their Round 1 room are treated as having forfeited — they are removed before room formation to avoid empty seats.
+
+---
+
+## 10. Summary of Tournament-Specific Rule Differences vs. Casual
 
 | Rule | Casual | Tournament |
 |---|---|---|
-| Win condition | First to 500 points | First to empty hand OR reach 400 points |
-| Match timeout | None | 20 minutes |
-| Timeout resolution | N/A | Most points → fewest cards → turn order |
-| Forfeit consequence | Lose the game | Eliminated from tournament |
+| Win condition (game) | First to 500 cumulative points | First to empty hand OR reach 400 cumulative points |
+| Match format | Single game (multiple rounds) | Best-of-three: up to 3 games; top 3 by game wins advance |
+| Advancement | N/A | Top 3 per room; all active players if ≤3 remain |
+| Match timeout | None | 20 minutes per match |
+| Timeout resolution | N/A | Most points → fewest cards → turn order position |
+| Forfeit consequence | Lose the game | Permanently eliminated from tournament |
 | Lobby assembly | Players join manually | Matchmaking-assembled |
-| Brackets | None | Shuffled per phase, no fixed seeding |
+| Brackets | None | Reshuffled per round, no fixed seeding |
+| Elo updated | Casual Elo (per completed game) | Tournament-placement Elo (per completed game) |
