@@ -54,7 +54,7 @@ Each room plays a **fixed three-game match**: always exactly 3 individual games.
   1. **Empty their hand** (play their last card), OR
   2. **Reach 400 cumulative points** across rounds within that game.
 - Both conditions are checked at the end of each round. Whichever is triggered first ends the game immediately.
-- Scoring per round follows [RULESET.md — Section 9](./RULESET.md).
+- Scoring per round follows [RULESET.md — Section 8](./RULESET.md).
 
 The match proceeds as follows:
 1. All players in the room **always play exactly 3 games**, regardless of intermediate win counts. The match ends early only if the 20-minute timeout is reached (see Section 3.1) or all players but one have forfeited.

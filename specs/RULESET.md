@@ -109,12 +109,6 @@ Draw Two stacking is **enabled**. Wild Draw Four stacking is **disabled** in all
 - A **Wild Draw Four** may not be played in response to a Draw Two to extend or absorb a stack.
 - A Wild Draw Four may not be played in response to another Wild Draw Four.
 
-### Jump-In Interaction with Stacking
-
-- A player may jump in (Section 7) with the **exact same Draw Two** that is on top of the discard pile during an active stack chain.
-- The jump-in also counts as a stack response: the penalty accumulates by 2 and the turn continues from the jumping-in player.
-- The player who was originally next in turn order (the intended victim before the jump-in) is skipped.
-
 ---
 
 ## 6. Wild Draw Four Challenge
@@ -139,45 +133,12 @@ Only the **player required to draw the four cards** (the next player in turn ord
 
 - Wild cards in the player's hand do **not** count as a matching color when determining guilt.
 - If no challenge is issued, the Wild Draw Four effect resolves normally (next player draws 4 and is skipped).
-- **Timing**: the 5-second challenge window runs **before** the next player's 45-second turn timer begins. The player must decide to challenge or draw within this window. The 45-second timer only starts after the challenge is resolved or the player draws. This window is separate from and sequential to the Uno! challenge window (see Section 8).
+- **Timing**: the 5-second challenge window runs **before** the next player's 45-second turn timer begins. The player must decide to challenge or draw within this window. The 45-second timer only starts after the challenge is resolved or the player draws. This window is separate from and sequential to the Uno! challenge window (see Section 7).
 
 ---
 
-## 7. Jump-In Rule
 
-Jump-in is an **active rule** on this platform.
-
-### Eligibility
-
-- A player may play out of turn if they hold a card **identical** to the most recently played card in both **color and rank/symbol**.
-- Jump-in is allowed on: number cards, Skip cards, Reverse cards, and Draw Two cards.
-- Jump-in is **not allowed** on Wild cards or Wild Draw Four cards (they have no inherent color and cannot be matched exactly).
-
-### Effects
-
-- The jumping-in player immediately places their matching card on the discard pile.
-- **Turn order resets from the jumper**: play continues from the jumping-in player's position, proceeding in the current direction of play. All players between the original player and the jumper are skipped for that turn cycle.
-- The card played by the jumper takes full effect (e.g., a Skip forces the next player after the jumper to skip; a Reverse changes direction from the jumper's position; a Draw Two initiates or extends a stack).
-- **Double Reverse**: if a Reverse is in play and a player jumps in with the identical Reverse, the direction reverses twice, returning to the original direction of play.
-
-### Draw Two Jump-In During a Stack
-
-- If a Draw Two stack chain is active and a player holds the exact same Draw Two on top of the discard pile, they may jump in.
-- The jump-in extends the stack: the accumulated penalty increases by 2 and turn order continues from the jumper.
-- The player who was next in turn order before the jump-in is skipped.
-
-### Simultaneous Jump-Ins
-
-- If two or more players attempt to jump in with the same card simultaneously, the **first valid submission received** by the server wins.
-- All other simultaneous submissions are rejected with a conflict response.
-
-### Self-Jump
-
-- A player may **not** jump in on their own card. Playing two identical cards in the same turn is not allowed.
-
----
-
-## 8. Calling "Uno!"
+## 7. Calling "Uno!"
 
 - A player **must** call "Uno!" at the moment they play their second-to-last card, leaving exactly one card in their hand.
 - The call must occur as part of, or immediately following, the card play action.
@@ -186,7 +147,7 @@ Jump-in is an **active rule** on this platform.
 
 - The moment a player plays their second-to-last card, a **5-second challenge window** opens.
 - During this window, **any opponent** may challenge whether the player called "Uno!".
-- The window closes early the moment the next player begins their turn (i.e., submits any game action: playing a card, drawing, challenging, or jumping in).
+- The window closes early the moment the next player begins their turn (i.e., submits any game action: playing a card, drawing, or challenging a Wild Draw Four).
 - **Concurrency**: if multiple opponents attempt to challenge simultaneously, only the **first valid challenge received by the server** is processed. All others are rejected.
 - **Timing**: the 5-second Uno! challenge window runs **within** the next player's 45-second turn timer. The turn timer starts immediately when the next player's turn begins; the Uno! window does not pause it.
 - **When Wild Draw Four is also in play**: if the second-to-last card played was a Wild Draw Four, the Uno! challenge window (5 seconds, open to all opponents) runs **first**. After the Uno! window closes, the next player's turn begins with a separate Wild Draw Four challenge window (5 seconds — see Section 6). The 45-second turn timer only starts after the Wild Draw Four window resolves.
@@ -199,7 +160,7 @@ Jump-in is an **active rule** on this platform.
 
 ---
 
-## 9. Winning a Round
+## 8. Winning a Round
 
 - A player wins the round the moment they play their last card and hold **zero cards**.
 - The winner scores points equal to the **sum of all cards remaining in every other player's hand**:
@@ -215,7 +176,7 @@ Jump-in is an **active rule** on this platform.
 
 ---
 
-## 10. Winning the Game
+## 9. Winning the Game
 
 - A game is played across **multiple rounds**.
 - The first player to accumulate a **cumulative score of 500 or more points** wins the game.
@@ -223,7 +184,7 @@ Jump-in is an **active rule** on this platform.
 
 ---
 
-## 11. Draw Pile Exhaustion
+## 10. Draw Pile Exhaustion
 
 - If a player must draw and the draw pile is empty:
   1. Take all cards from the discard pile **except the top card**.
@@ -232,7 +193,7 @@ Jump-in is an **active rule** on this platform.
 
 ---
 
-## 12. Turn Order Reference
+## 11. Turn Order Reference
 
 | Event | Effect on turn order |
 |---|---|
@@ -242,7 +203,3 @@ Jump-in is an **active rule** on this platform.
 | Draw Two played (no stack) | Next player draws 2 and is skipped |
 | Draw Two stacked | Penalty accumulates; chain continues; eventual victim draws total and is skipped |
 | Wild Draw Four played | Next player draws 4 and is skipped |
-| Jump-in occurs | Turn order resets from the jumper; proceeding in current direction |
-| Jump-in with Reverse | Direction flips from jumper's position |
-| Jump-in with Draw Two (during stack) | Penalty +2, turn continues from jumper; original next player skipped |
-| Double Reverse via jump-in | Direction reverses twice; original direction restored |
