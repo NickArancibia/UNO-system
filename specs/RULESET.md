@@ -139,6 +139,7 @@ Only the **player required to draw the four cards** (the next player in turn ord
 
 - Wild cards in the player's hand do **not** count as a matching color when determining guilt.
 - If no challenge is issued, the Wild Draw Four effect resolves normally (next player draws 4 and is skipped).
+- **Timing**: the 5-second challenge window runs **before** the next player's 45-second turn timer begins. The player must decide to challenge or draw within this window. The 45-second timer only starts after the challenge is resolved or the player draws. This window is separate from and sequential to the Uno! challenge window (see Section 8).
 
 ---
 
@@ -187,6 +188,8 @@ Jump-in is an **active rule** on this platform.
 - During this window, **any opponent** may challenge whether the player called "Uno!".
 - The window closes early the moment the next player begins their turn (i.e., submits any game action: playing a card, drawing, challenging, or jumping in).
 - **Concurrency**: if multiple opponents attempt to challenge simultaneously, only the **first valid challenge received by the server** is processed. All others are rejected.
+- **Timing**: the 5-second Uno! challenge window runs **within** the next player's 45-second turn timer. The turn timer starts immediately when the next player's turn begins; the Uno! window does not pause it.
+- **When Wild Draw Four is also in play**: if the second-to-last card played was a Wild Draw Four, the Uno! challenge window (5 seconds, open to all opponents) runs **first**. After the Uno! window closes, the next player's turn begins with a separate Wild Draw Four challenge window (5 seconds — see Section 6). The 45-second turn timer only starts after the Wild Draw Four window resolves.
 
 ### Outcomes
 
