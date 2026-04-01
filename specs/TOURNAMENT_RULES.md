@@ -9,7 +9,7 @@ This document defines all rules specific to tournament mode. General platform ru
 - Tournaments support up to **1,000,000 players**.
 - A tournament consists of **sequential elimination rounds**, each reducing the active player pool by approximately 70%. The actual number of rounds is computed dynamically from the confirmed player count at tournament start (see Section 2).
 - There are **no fixed brackets**. Before each round, all qualifiers are **reshuffled** and distributed randomly into new rooms. Players never face the same seeded opponents.
-- In each room, players compete in a **fixed three-game match** (always exactly 3 individual games). The **top 3 players by cumulative point total** advance to the next round; the rest are eliminated.
+- In each room, players compete in a **Best-of-Three (Bo3) match** (up to 3 individual games with the same players). The **top 3 players by room ranking** advance to the next round; ranking is based on match wins with tie-breaks (see Section 4).
 - The tournament ends when **10 or fewer players remain**, at which point a **Final Room** is created. The winner of the Final Room is the **Tournament Champion**.
 
 ---
@@ -48,19 +48,22 @@ The full table for maximum scale (1,000,000 players) is:
 
 ## 3. Match Format in Tournaments
 
-Each room plays a **fixed three-game match**: always exactly 3 individual games. Each individual game uses the same win condition as casual:
+Each room plays a **Best-of-Three (Bo3) match**: up to 3 individual games with the same players. Each individual game uses the same win condition as casual:
 
 - A player wins a **game** by being the first to **empty their hand** (play their last card). There is no point-threshold win condition.
 - The winner receives **0 points** for that game; all other players receive a negative score equal to the sum of card values remaining in their hand (see [RULESET.md — Section 9](./RULESET.md)).
 
 The match proceeds as follows:
-1. All players in the room **always play exactly 3 games**. The match ends early only if the 20-minute timeout is reached (see Section 3.1) or forfeits reduce the room to 1 active player (see below).
-2. After all 3 games are completed (or the match timeout is reached), each player's **cumulative point total** across the 3 games is recorded.
-3. The **top 3 players by cumulative points** (highest = least negative) advance (see Section 4 for tiebreaks and partial rooms).
+1. All active players start with `match_wins = 0`.
+2. Games are played sequentially with the same players (unless forfeits remove players).
+3. After each completed game, that game's winner gets `match_wins += 1`.
+4. If any active player reaches `match_wins = 2`, the Bo3 match ends immediately (early end).
+5. If no player reaches 2 wins after Game 2, Game 3 is played and the match ends after Game 3.
+6. At match end, advancement is determined from final room standings (Section 4). The top 3 players advance.
 
 **Forfeit reducing to one player:** if forfeits reduce the room to exactly 1 active player during the match, the remaining games are not played — a game cannot run with fewer than 2 players. The sole remaining player is declared the winner of the match and advances unconditionally.
 
-**Ranking of forfeited players:** forfeited players are ranked **below all active (non-forfeited) players** in the final room standings, regardless of their cumulative point total at the time of forfeit. If multiple players forfeited, they are ranked among themselves by time of forfeit (earliest forfeit = lowest rank).
+**Ranking of forfeited players:** forfeited players are ranked **below all active (non-forfeited) players** in the final room standings, regardless of their match wins or tie-break metrics at the time of forfeit. If multiple players forfeited, they are ranked among themselves by time of forfeit (earliest forfeit = lowest rank).
 
 ### 3.1 Match Timeout
 
@@ -69,17 +72,19 @@ The match proceeds as follows:
   1. **Highest point total** (closest to 0) → best finish in that game.
   2. Tiebreak (equal points): **fewest cards remaining in hand** → ranks higher.
   3. Second tiebreak (equal cards and points): **randomized** among the tied players.
-- After timeout resolution, cumulative points across all completed and timeout-resolved games are tallied and advancement is determined normally.
+- The timeout-resolved first-place player is treated as that game's winner and receives the corresponding match win.
+- After timeout handling, the match ends immediately. Advancement is then determined normally from match wins and Section 4 tie-breaks using the games that were completed (including timeout-resolved games).
 
 ---
 
 ## 4. Advancement
 
-- The **top 3 players by cumulative point total** across the 3 games advance to the next round. The player with the highest total (closest to 0) ranks first; the most negative ranks last.
-- **Tiebreak rules** (when two or more players are tied on cumulative points):
-  1. **Fewest cumulative cards remaining** across all games → advances.
-  2. Still tied: **randomized** among the tied players — one advances, the other is eliminated.
-- **Partial rooms**: if a room ends with **3 or fewer active players** (due to forfeits or disconnections during the match), all active players advance regardless of point total. Forfeited players are never counted as "active" for this purpose and always rank below active players.
+- The **top 3 players by final room ranking** advance to the next round.
+- Final room ranking is determined by:
+  1. **Higher match wins** across the Bo3 match (`match_wins`) → ranks higher.
+  2. If tied on match wins: **lower cumulative card-point total** across the tied players' match games → ranks higher. For this tie-break, card-point total means the non-negative card-value burden (e.g., a game score of `-22` contributes `22`).
+  3. If still tied: **lower cumulative cards remaining** across those match games → ranks higher.
+- **Partial rooms**: if a room ends with **3 or fewer active players** (due to forfeits or disconnections during the match), all active players advance regardless of match wins or tie-break metrics. Forfeited players are never counted as "active" for this purpose and always rank below active players.
 - Players eliminated from the tournament may freely **spectate any active room** in the current or subsequent rounds.
 
 ---
@@ -124,7 +129,7 @@ Tournament disconnection follows the same rules as casual games ([CONSTRAINTS.md
 - A forfeiting player's hand is discarded. The match continues with remaining players.
 - If a forfeit reduces the room to **3 or fewer active players**, all remaining active players advance (see Section 4).
 - If a forfeit reduces the room to **1 active player**, the remaining games in the match are not played. The sole remaining player wins the match unconditionally.
-- Forfeited players rank **below all active players** in the final room standings, regardless of their cumulative point total at the time of forfeit (see Section 3).
+- Forfeited players rank **below all active players** in the final room standings, regardless of their match wins or tie-break metrics at the time of forfeit (see Section 3).
 - The eliminated player may continue to spectate any active rooms in the tournament.
 - **Lone qualifier**: if, after all rooms have been formed for a round, a single qualifier cannot be placed into any room (minimum room size is 2 players), that player **automatically advances** to the next round without playing.
 
@@ -158,10 +163,10 @@ Tournament disconnection follows the same rules as casual games ([CONSTRAINTS.md
 | Rule | Casual | Tournament |
 |---|---|---|
 | Win condition (game) | First to empty hand | First to empty hand |
-| Match format | Single game | Fixed three-game match (always exactly 3 games); top 3 by cumulative points advance |
-| Advancement | N/A | Top 3 per room by cumulative points; all active players if ≤3 remain |
+| Match format | Single game | Best-of-Three (Bo3), up to 3 games; match may end early when any player reaches 2 game wins |
+| Advancement | N/A | Top 3 per room by match wins; ties break by lower cumulative card-point total, then lower cumulative cards; all active players if ≤3 remain |
 | Match timeout | None | 20 minutes per match |
-| Timeout resolution | N/A | Most points → fewest cards → randomized |
+| Timeout resolution | N/A | Active game: most points → fewest cards → randomized; then room ranking by match wins and advancement tie-breaks |
 | Forfeit consequence | Lose the game | Permanently eliminated from tournament |
 | Lobby assembly | Players join manually | Matchmaking-assembled |
 | Brackets | None | Reshuffled per round, no fixed seeding |

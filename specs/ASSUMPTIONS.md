@@ -107,12 +107,12 @@ The post-game public log records all of the following:
 | # | Decision | Resolution |
 |---|---|---|
 | R1 | Casual tiebreak: shared position vs. randomized | **Randomized** — tied players (equal points and card count) are assigned distinct positions randomly. No shared-position concept in rankings or Elo. |
-| R2 | Tournament match format: best-of-three vs. fixed three games | **Fixed three-game match** — all 3 games are always played regardless of game win counts. |
-| R3 | Tournament advancement criterion: game wins vs. cumulative points | **Cumulative point total** across all 3 games determines advancement. |
+| R2 | Tournament match format: best-of-three vs. fixed three games | **Best-of-Three (Bo3)** — up to 3 games are played; the match ends early if any player reaches 2 game wins, otherwise it ends after Game 3. |
+| R3 | Tournament advancement criterion: game wins vs. cumulative points | **Match wins first**. Advancement uses game wins, then tie-breaks by lower cumulative card-point burden (sum of remaining card values as non-negative totals), then lower cumulative cards remaining. |
 | R4 | Voluntary disconnect handling | **60-second reconnection window** applies to all disconnections regardless of whether voluntary or involuntary. Immediate forfeit requires an explicit forfeit command. |
 | R5 | No-show handling in Round 2+ tournament lobbies | Same rule as Round 1 applies to all rounds: absent player is treated as forfeited before the game starts. |
 | R6 | Wild Draw Four challenge hand reveal | Hand is **never revealed** to any player during the game. Verification is server-side only; hand composition appears in the post-game public log. |
-| R7 | Match continuation when forfeits leave 1 player | Remaining games are not played; the sole player wins the match. Forfeited players rank below all active players regardless of cumulative points. |
+| R7 | Match continuation when forfeits leave 1 player | Remaining games are not played; the sole player wins the match. Forfeited players rank below all active players regardless of match wins or tie-break metrics. |
 | R8 | Multi-card draw when draw pile is insufficient | Server pre-checks draw pile size before the draw begins and appends a reshuffled discard pile if needed; if still insufficient, remaining penalty is waived. |
 | R9 | Session reconnection definition | Reconnection is complete only when session is re-established **and** game state is fully synchronized. |
 | R10 | Tournament Elo formula inputs | Formula uses final placement only. Rounds reached and win rates are profile statistics used solely to sub-order same-round eliminees for placement bucketing. |
