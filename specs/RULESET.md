@@ -199,12 +199,12 @@ Jump-in is an **active rule** on this platform.
 
 ---
 
-## 9. Winning a Round
+## 9. Scoring
 
-- A player wins the round the moment they play their last card and hold **zero cards**.
-- The winner scores points equal to the **sum of all cards remaining in every other player's hand**:
+- A player wins the game the moment they play their last card and hold **zero cards**. They receive **0 points**.
+- All other players receive a **negative score** equal to the sum of card values remaining in their hand at that moment:
 
-| Card type | Point value |
+| Card type | Point value (deducted) |
 |---|---|
 | Number cards (0–9) | Face value (0–9 points) |
 | Skip | 20 points |
@@ -213,13 +213,19 @@ Jump-in is an **active rule** on this platform.
 | Wild | 50 points |
 | Wild Draw Four | 50 points |
 
+For example, a player holding a Red 2 and a Skip ends the game with **−22 points**.
+
+Points are used exclusively for **ranking and tiebreaking** — they do not accumulate across games to trigger a win condition.
+
 ---
 
 ## 10. Winning the Game
 
-- A game is played across **multiple rounds**.
-- The first player to accumulate a **cumulative score of 500 or more points** wins the game.
-- After each round ends, all cards are collected, reshuffled, and a new round begins with the same players.
+- A game ends the moment any player empties their hand. **There is no round-based structure within a single game and no cumulative point threshold.**
+- Players are ranked from best to worst by their point total: highest (closest to 0) ranks first, lowest (most negative) ranks last.
+- **Tiebreak** (two or more players with equal point totals):
+  1. **Fewest cards remaining in hand** → ranks higher.
+  2. **Still tied**: ranking among tied players is **randomized**.
 
 ---
 

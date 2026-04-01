@@ -93,10 +93,12 @@ The matchmaking system assembles rooms from the Quick Play queue. Rooms are not 
 
 ## 3. Game Format — Casual
 
-- A casual game consists of **multiple rounds** played until one player reaches **500 cumulative points**.
-- The first player to reach or exceed 500 points at the end of any round wins the game.
-- Scoring follows the rules in [RULESET.md — Section 9](./RULESET.md).
-- After each round, cards are collected, reshuffled, and a new round begins with all remaining active players.
+- A casual game runs continuously until one player empties their hand. Cards are dealt once at the start; the draw pile is replenished from the discard pile as needed (see [RULESET.md — Section 11](./RULESET.md)) but there is no re-deal between rounds.
+- The player who empties their hand wins the game and receives **0 points**. All other players receive a negative score equal to the sum of card values remaining in their hand (see [RULESET.md — Section 9](./RULESET.md)).
+- Players are ranked from highest (0 points, the winner) to lowest (most negative). There is no cumulative point threshold — emptying your hand is the only way to win.
+- **Tiebreak for equal point totals** (non-winner positions):
+  1. **Fewest cards remaining** → ranks higher.
+  2. **Still tied**: tied players **share the same finishing position**. The next position in the ranking is skipped accordingly (e.g., if two players share 2nd place, the next player is ranked 4th).
 - There is no maximum game duration for casual games.
 
 ---
@@ -152,7 +154,8 @@ UnoArena uses a **placement-based multi-player Elo extension** for casual games.
 2. **Expected score**: `E_i = [Σ_{j≠i} P(i beats j)] / (N − 1)`, where `P(i beats j) = 1 / (1 + 10^((R_j − R_i) / 400))`
 3. **Elo delta**: `ΔR_i = K × (S_i − E_i)`
 4. **K-factor**: 32 for players with fewer than 20 completed casual games; 16 for 20–99 games; 12 for 100+ games.
-5. **Points bonus**: if a player's final cumulative score is ≥ 20% above the room average, `ΔR_i` is increased by +3 (rewards dominant performance beyond placement alone).
+5. **Points bonus**: since points are 0 or negative, "above the room average" means a smaller absolute deficit. If a player's absolute card-value deficit is at most **80% of the room average absolute deficit** (i.e., they performed at least 20% better than average), `ΔR_i` is increased by +3. The winner (0 points) always qualifies if the room average is negative.
+6. **Shared positions**: players who share a finishing position (tied on both points and card count — see Section 3) receive the same `rank_i` in the Elo formula. The next distinct rank is the shared rank plus the number of tied players.
 
 Forfeiting players are assigned rank N (last place) regardless of when they forfeited. See also [ASSUMPTIONS.md — Section 3](./ASSUMPTIONS.md) for full derivation rationale.
 

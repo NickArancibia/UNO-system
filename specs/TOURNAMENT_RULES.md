@@ -48,37 +48,34 @@ The full table for maximum scale (1,000,000 players) is:
 
 ## 3. Match Format in Tournaments
 
-Each room plays a **fixed three-game match**: always exactly 3 individual games. Each individual game uses a **modified win condition** compared to casual:
+Each room plays a **fixed three-game match**: always exactly 3 individual games. Each individual game uses the same win condition as casual:
 
-- A player wins a **game** by being the first to either:
-  1. **Empty their hand** (play their last card), OR
-  2. **Reach 400 cumulative points** across rounds within that game.
-- Both conditions are checked at the end of each round. Whichever is triggered first ends the game immediately.
-- Scoring per round follows [RULESET.md — Section 9](./RULESET.md).
+- A player wins a **game** by being the first to **empty their hand** (play their last card). There is no point-threshold win condition.
+- The winner receives **0 points** for that game; all other players receive a negative score equal to the sum of card values remaining in their hand (see [RULESET.md — Section 9](./RULESET.md)).
 
 The match proceeds as follows:
-1. All players in the room **always play exactly 3 games**, regardless of intermediate win counts. The match ends early only if the 20-minute timeout is reached (see Section 3.1) or all players but one have forfeited.
-2. After all 3 games are completed (or the match timeout is reached), each player's **game win count** (0, 1, 2, or 3) is recorded.
-3. The **top 3 players by game wins** advance (see Section 4 for tiebreaks and partial rooms).
+1. All players in the room **always play exactly 3 games**. The match ends early only if the 20-minute timeout is reached (see Section 3.1) or all players but one have forfeited.
+2. After all 3 games are completed (or the match timeout is reached), each player's **cumulative point total** across the 3 games is recorded.
+3. The **top 3 players by cumulative points** (highest = least negative) advance (see Section 4 for tiebreaks and partial rooms).
 
 ### 3.1 Match Timeout
 
 - Each tournament room has a **20-minute hard timeout** covering the **entire match** (all games combined).
-- If the timeout is reached during an active game, that game is resolved immediately:
-  1. **Most cumulative points** → winner of that game.
-  2. Tiebreak (equal points): **fewest cards remaining in hand** → winner.
-  3. Second tiebreak (equal cards): **earliest turn order position** (closest to 1st in the current turn sequence) → winner.
-- After timeout resolution, game wins are tallied and advancement is determined normally.
+- If the timeout is reached during an active game, that game is resolved immediately using the standard ranking rules:
+  1. **Highest point total** (closest to 0) → best finish in that game.
+  2. Tiebreak (equal points): **fewest cards remaining in hand** → ranks higher.
+  3. Second tiebreak (equal cards and points): **randomized** among the tied players.
+- After timeout resolution, cumulative points across all completed and timeout-resolved games are tallied and advancement is determined normally.
 
 ---
 
 ## 4. Advancement
 
-- The **top 3 players by game wins** within a match advance to the next round.
-- **Tiebreak rules** (when two or more players are tied on game wins):
-  1. **Lower cumulative card-point total** across the games in which those tied players had an equal number of wins (i.e., only the games contributing to the tie are counted) → advances.
-  2. Still tied: **earliest time of final game completion** → advances.
-- **Partial rooms**: if a room ends with **3 or fewer active players** (due to forfeits or disconnections during the match), all active players advance regardless of win count.
+- The **top 3 players by cumulative point total** across the 3 games advance to the next round. The player with the highest total (closest to 0) ranks first; the most negative ranks last.
+- **Tiebreak rules** (when two or more players are tied on cumulative points):
+  1. **Fewest cumulative cards remaining** across all games → advances.
+  2. Still tied: **randomized** among the tied players — one advances, the other is eliminated.
+- **Partial rooms**: if a room ends with **3 or fewer active players** (due to forfeits or disconnections during the match), all active players advance regardless of point total.
 - Players eliminated from the tournament may freely **spectate any active room** in the current or subsequent rounds.
 
 ---
@@ -156,11 +153,11 @@ Tournament disconnection follows the same rules as casual games ([CONSTRAINTS.md
 
 | Rule | Casual | Tournament |
 |---|---|---|
-| Win condition (game) | First to 500 cumulative points | First to empty hand OR reach 400 cumulative points |
-| Match format | Single game (multiple rounds) | Fixed three-game match; top 3 by game wins advance |
-| Advancement | N/A | Top 3 per room; all active players if ≤3 remain |
+| Win condition (game) | First to empty hand | First to empty hand |
+| Match format | Single game | Fixed three-game match; top 3 by cumulative points advance |
+| Advancement | N/A | Top 3 per room by cumulative points; all active players if ≤3 remain |
 | Match timeout | None | 20 minutes per match |
-| Timeout resolution | N/A | Most points → fewest cards → turn order position |
+| Timeout resolution | N/A | Most points → fewest cards → randomized |
 | Forfeit consequence | Lose the game | Permanently eliminated from tournament |
 | Lobby assembly | Players join manually | Matchmaking-assembled |
 | Brackets | None | Reshuffled per round, no fixed seeding |
