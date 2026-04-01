@@ -126,7 +126,7 @@ Only the **player required to draw the four cards** (the next player in turn ord
 ### Process
 
 1. The challenger must declare the challenge **within 5 seconds** of the Wild Draw Four being played, and **before drawing any cards**. The challenge window closes when the 5-second timer expires or the player begins drawing, whichever comes first.
-2. The player who played the Wild Draw Four must **reveal their entire hand** to the challenger.
+2. The server **verifies the accused player's hand internally**. No hand is revealed to the challenger or any other player during the game. The verified hand composition is recorded in the post-game log (see [ASSUMPTIONS.md — Section 5](./ASSUMPTIONS.md)).
 
 ### Outcomes
 
@@ -139,7 +139,7 @@ Only the **player required to draw the four cards** (the next player in turn ord
 
 - Wild cards in the player's hand do **not** count as a matching color when determining guilt.
 - If no challenge is issued, the Wild Draw Four effect resolves normally (next player draws 4 and is skipped).
-- **Timing**: the 5-second challenge window runs **before** the next player's 45-second turn timer begins. The player must decide to challenge or draw within this window. The 45-second timer only starts after the challenge is resolved or the player draws. This window is separate from and sequential to the Uno! challenge window (see Section 8).
+- **Timing**: the 5-second challenge window runs **before** the next player's 45-second turn timer begins. The player must decide to challenge or draw within this window. The 45-second timer only starts after the challenge is resolved or the player draws. When the Wild Draw Four is **not** the player's second-to-last card, this window is separate from the Uno! challenge window (see Section 8). When the Wild Draw Four **is** the player's second-to-last card, a combined window applies — see Section 8.
 
 ---
 
@@ -189,7 +189,27 @@ Jump-in is an **active rule** on this platform.
 - The window closes early the moment the next player begins their turn (i.e., submits any game action: playing a card, drawing, challenging, or jumping in).
 - **Concurrency**: if multiple opponents attempt to challenge simultaneously, only the **first valid challenge received by the server** is processed. All others are rejected.
 - **Timing**: the 5-second Uno! challenge window runs **within** the next player's 45-second turn timer. The turn timer starts immediately when the next player's turn begins; the Uno! window does not pause it.
-- **When Wild Draw Four is also in play**: if the second-to-last card played was a Wild Draw Four, the Uno! challenge window (5 seconds, open to all opponents) runs **first**. After the Uno! window closes, the next player's turn begins with a separate Wild Draw Four challenge window (5 seconds — see Section 6). The 45-second turn timer only starts after the Wild Draw Four window resolves.
+- **When Wild Draw Four is the second-to-last card**: if player A plays a Wild Draw Four as their second-to-last card, the Uno! challenge and Wild Draw Four challenge windows are **merged into one combined 5-second window**. The following rules apply.
+
+  **Available actions during the combined window:**
+  - **Player A** may call "Uno!" at any point during the window.
+  - **Player B** (next in turn order) may: (a) challenge the Wild Draw Four, (b) draw 4 cards (accepting the effect and waiving the challenge), or (c) call "Uno!" on A if A has not yet called it.
+  - **Any other opponent** may call "Uno!" on A if A has not yet called it.
+
+  **Timer behavior:** the 5-second timer **pauses** when any action (a Uno! call or a Wild Draw Four challenge) is received, for the duration of processing and resolution. It resumes after resolution with the remaining time. Multiple actions may occur within the window as long as time remains.
+
+  **Outcomes:**
+
+  | Event | Consequence |
+  |---|---|
+  | A calls "Uno!" during the window | Uno! is recorded; A is safe. B's Wild Draw Four options (challenge or draw) remain open for the remaining time. |
+  | Any player calls "Uno!" on A before A calls it | A draws 2 penalty cards and now holds 3+ cards. Uno! state is no longer active. B's Wild Draw Four options remain open for the remaining time. |
+  | B challenges the Wild Draw Four — **challenge wins** (A had a matching color) | Wild Draw Four is rescinded. A draws 4 penalty cards and now holds 5+ cards; Uno! state is no longer active. The combined window closes immediately. B takes their turn normally. |
+  | B challenges the Wild Draw Four — **challenge loses** (A had no matching color) | Wild Draw Four stands. B draws 6 cards (4 + 2 penalty) and B's turn is skipped. A still holds 1 card. If A has not yet called "Uno!" and time remains in the window, opponents may still call "Uno!" on A. |
+  | Window expires and A never called "Uno!" and was not challenged on it | A draws 2 penalty cards (equivalent to a successful Uno! challenge by inaction). |
+  | Window expires and B never challenged or drew | B must draw 4 cards (Wild Draw Four effect stands; challenge waived by inaction). |
+
+  The 45-second turn timer starts only after the combined window has fully resolved.
 
 ### Outcomes
 
@@ -235,6 +255,8 @@ Points are used exclusively for **ranking and tiebreaking** — they do not accu
   1. Take all cards from the discard pile **except the top card**.
   2. Shuffle those cards to form a new draw pile.
   3. The top card of the discard pile remains in place; play continues normally.
+
+- **Multi-card draws (penalties and stacks):** before a player begins drawing multiple cards (e.g., from a Draw Two stack, Wild Draw Four, or Uno!/WD4 challenge penalty), the server compares the number of cards to be drawn against the current draw pile size. If the draw pile does not have enough cards, the discard pile (minus the top card) is shuffled and **appended to the bottom of the current draw pile** before the draw begins. This ensures the player draws the full required amount in a single operation. If the combined draw pile and discard pile still do not contain enough cards (possible only in extreme edge cases with very few players and a heavily depleted game state), the player draws all available cards and the remainder of the penalty is waived.
 
 ---
 

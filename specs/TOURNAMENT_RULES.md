@@ -9,7 +9,7 @@ This document defines all rules specific to tournament mode. General platform ru
 - Tournaments support up to **1,000,000 players**.
 - A tournament consists of **sequential elimination rounds**, each reducing the active player pool by approximately 70%. The actual number of rounds is computed dynamically from the confirmed player count at tournament start (see Section 2).
 - There are **no fixed brackets**. Before each round, all qualifiers are **reshuffled** and distributed randomly into new rooms. Players never face the same seeded opponents.
-- In each room, players compete in a **best-of-three match** (up to 3 individual games). The **top 3 players by game wins** advance to the next round; the rest are eliminated.
+- In each room, players compete in a **fixed three-game match** (always exactly 3 individual games). The **top 3 players by cumulative point total** advance to the next round; the rest are eliminated.
 - The tournament ends when **10 or fewer players remain**, at which point a **Final Room** is created. The winner of the Final Room is the **Tournament Champion**.
 
 ---
@@ -54,9 +54,13 @@ Each room plays a **fixed three-game match**: always exactly 3 individual games.
 - The winner receives **0 points** for that game; all other players receive a negative score equal to the sum of card values remaining in their hand (see [RULESET.md — Section 9](./RULESET.md)).
 
 The match proceeds as follows:
-1. All players in the room **always play exactly 3 games**. The match ends early only if the 20-minute timeout is reached (see Section 3.1) or all players but one have forfeited.
+1. All players in the room **always play exactly 3 games**. The match ends early only if the 20-minute timeout is reached (see Section 3.1) or forfeits reduce the room to 1 active player (see below).
 2. After all 3 games are completed (or the match timeout is reached), each player's **cumulative point total** across the 3 games is recorded.
 3. The **top 3 players by cumulative points** (highest = least negative) advance (see Section 4 for tiebreaks and partial rooms).
+
+**Forfeit reducing to one player:** if forfeits reduce the room to exactly 1 active player during the match, the remaining games are not played — a game cannot run with fewer than 2 players. The sole remaining player is declared the winner of the match and advances unconditionally.
+
+**Ranking of forfeited players:** forfeited players are ranked **below all active (non-forfeited) players** in the final room standings, regardless of their cumulative point total at the time of forfeit. If multiple players forfeited, they are ranked among themselves by time of forfeit (earliest forfeit = lowest rank).
 
 ### 3.1 Match Timeout
 
@@ -75,7 +79,7 @@ The match proceeds as follows:
 - **Tiebreak rules** (when two or more players are tied on cumulative points):
   1. **Fewest cumulative cards remaining** across all games → advances.
   2. Still tied: **randomized** among the tied players — one advances, the other is eliminated.
-- **Partial rooms**: if a room ends with **3 or fewer active players** (due to forfeits or disconnections during the match), all active players advance regardless of point total.
+- **Partial rooms**: if a room ends with **3 or fewer active players** (due to forfeits or disconnections during the match), all active players advance regardless of point total. Forfeited players are never counted as "active" for this purpose and always rank below active players.
 - Players eliminated from the tournament may freely **spectate any active room** in the current or subsequent rounds.
 
 ---
@@ -116,9 +120,11 @@ Tournament rooms use a **matchmaking-driven lobby**:
 
 Tournament disconnection follows the same rules as casual games ([CONSTRAINTS.md — Section 2.4 and 2.5](./CONSTRAINTS.md)), with one additional consequence:
 
-- **Any forfeit** — whether voluntary disconnect, AFK, or reconnection-window expiry — **permanently eliminates the player from the current tournament**. They do not re-enter any subsequent round.
+- **Any forfeit** — whether explicit, AFK, or reconnection-window expiry — **permanently eliminates the player from the current tournament**. They do not re-enter any subsequent round.
 - A forfeiting player's hand is discarded. The match continues with remaining players.
 - If a forfeit reduces the room to **3 or fewer active players**, all remaining active players advance (see Section 4).
+- If a forfeit reduces the room to **1 active player**, the remaining games in the match are not played. The sole remaining player wins the match unconditionally.
+- Forfeited players rank **below all active players** in the final room standings, regardless of their cumulative point total at the time of forfeit (see Section 3).
 - The eliminated player may continue to spectate any active rooms in the tournament.
 - **Lone qualifier**: if, after all rooms have been formed for a round, a single qualifier cannot be placed into any room (minimum room size is 2 players), that player **automatically advances** to the next round without playing.
 
@@ -129,11 +135,9 @@ Tournament disconnection follows the same rules as casual games ([CONSTRAINTS.md
 - Every player has a **tournament-placement Elo** rating, entirely separate from the casual global Elo.
 - **Starting value**: 1,000 for all newly registered players.
 - Elo is updated **once, after the entire tournament concludes**, so all metrics (final placement, rounds reached, match and game win rates) are available for the calculation.
-- **Formula inputs**:
-  - Final placement across all tournament participants (1st = champion, down to all Round 1 eliminees).
-  - Number of rounds reached.
-  - Cumulative match win rate and game win rate across the tournament.
-- **Formula**: placement-based multi-player Elo — actual score `S_i = (T − p_i) / (T − 1)` where T = total participants and p_i = final placement; expected score `E_i` computed from pairwise Elo comparisons against all other participants; `ΔR_i = K × (S_i − E_i)` with **K = 40** for tournament play. Players eliminated in the same round share a placement bucket resolved by cumulative match win rate, then game win rate.
+- **Formula input**: final placement `p_i` across all tournament participants (1st = champion, down to all Round 1 eliminees). Within a placement bucket (players eliminated in the same round), relative ordering is resolved by cumulative match win rate, then game win rate — this determines each player's distinct `p_i` value.
+- **Profile statistics** (tracked on each player's profile; not direct formula inputs): number of rounds reached, cumulative match win rate, cumulative game win rate across the tournament.
+- **Formula**: placement-based multi-player Elo — actual score `S_i = (T − p_i) / (T − 1)` where T = total participants and p_i = final placement; expected score `E_i` computed from pairwise Elo comparisons against all other participants; `ΔR_i = K × (S_i − E_i)` with **K = 40** for tournament play.
 - Forfeits (voluntary, AFK, or reconnection-window expiry) count as the **worst placement within the player's elimination round** for tournament-placement Elo purposes.
 - See [ASSUMPTIONS.md — Section 3](./ASSUMPTIONS.md) for full derivation rationale.
 
@@ -145,7 +149,7 @@ Tournament disconnection follows the same rules as casual games ([CONSTRAINTS.md
 - **Registration**: players must register for a tournament before it begins. A registration window opens and closes at defined times set by the tournament organizer.
 - **Minimum players to start**: **1,000 registered and active players**. A tournament does not begin if fewer than 1,000 players are confirmed at start time.
 - **Concurrent participation**: a player may only be actively participating in one tournament at a time (they may spectate others).
-- Players who register but are **not present in their assigned Round 1 lobby when that lobby's timer starts** are treated as having forfeited. They are removed from the room before the game begins and are permanently eliminated from the tournament, as if they had voluntarily forfeited during play. This prevents empty seats and does not affect other players in that room.
+- Players who are **not present in their assigned lobby when that lobby's timer starts** — whether in Round 1 or any subsequent round — are treated as having forfeited. They are removed from the room before the game begins and are permanently eliminated from the tournament, as if they had explicitly forfeited during play. This prevents empty seats and does not affect other players in that room.
 
 ---
 
@@ -154,7 +158,7 @@ Tournament disconnection follows the same rules as casual games ([CONSTRAINTS.md
 | Rule | Casual | Tournament |
 |---|---|---|
 | Win condition (game) | First to empty hand | First to empty hand |
-| Match format | Single game | Fixed three-game match; top 3 by cumulative points advance |
+| Match format | Single game | Fixed three-game match (always exactly 3 games); top 3 by cumulative points advance |
 | Advancement | N/A | Top 3 per room by cumulative points; all active players if ≤3 remain |
 | Match timeout | None | 20 minutes per match |
 | Timeout resolution | N/A | Most points → fewest cards → randomized |

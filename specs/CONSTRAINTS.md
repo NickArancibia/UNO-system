@@ -64,14 +64,14 @@ The matchmaking system assembles rooms from the Quick Play queue. Rooms are not 
 
 ### 2.5 Disconnection & Voluntary Forfeit
 
-- A player may voluntarily disconnect at any time, which **immediately forfeits** their participation in the current game.
-- If a player **loses connection** without voluntarily forfeiting:
+- A player may **explicitly forfeit** at any time by submitting a forfeit command. This **immediately and permanently** ends their participation in the current game.
+- If a player's connection drops for any reason — whether they intentionally closed their client or experienced an involuntary disconnect:
   - They remain registered in the game.
   - A **60-second reconnection window** begins immediately.
   - During the window, the disconnected player's **turns are skipped** (as if they passed). The turn timer does not run and the AFK counter does not accumulate.
   - If the window expires, the player is **automatically forfeited**. If the window expires during the player's turn, the forfeit is immediate.
-  - A player who **reconnects within the window** resumes with their original hand intact. Their AFK counter resets to zero.
-- Any forfeit — voluntary, AFK, or reconnection-window expiry — is permanent. A forfeited player cannot re-enter the same game.
+  - A player who **reconnects within the window** resumes with their original hand intact. A reconnection is considered complete only once the session is re-established **and** the game state is fully synchronized. Their AFK counter resets to zero.
+- Any forfeit — explicit, AFK, or reconnection-window expiry — is permanent. A forfeited player cannot re-enter the same game.
 
 ### 2.6 Effect of a Forfeit on the Game
 
@@ -98,7 +98,7 @@ The matchmaking system assembles rooms from the Quick Play queue. Rooms are not 
 - Players are ranked from highest (0 points, the winner) to lowest (most negative). There is no cumulative point threshold — emptying your hand is the only way to win.
 - **Tiebreak for equal point totals** (non-winner positions):
   1. **Fewest cards remaining** → ranks higher.
-  2. **Still tied**: tied players **share the same finishing position**. The next position in the ranking is skipped accordingly (e.g., if two players share 2nd place, the next player is ranked 4th).
+  2. **Still tied**: ranking among tied players is **randomized**.
 - There is no maximum game duration for casual games.
 
 ---
@@ -119,12 +119,12 @@ The matchmaking system assembles rooms from the Quick Play queue. Rooms are not 
 - A player **cannot** see:
   - Any other player's card identities.
 
-### 4.2 Wild Draw Four Challenge Reveal
+### 4.2 Wild Draw Four Challenge
 
-- When a Wild Draw Four challenge is initiated, the **accused player's full hand is revealed exclusively to the challenger**.
-- No other player — including spectators — sees the hand during the challenge.
+- When a Wild Draw Four challenge is initiated, the server **verifies the accused player's hand internally**. No hand is revealed to the challenger or any other player — including spectators — during the game.
+- The outcome of the challenge (guilty or innocent) and the verified hand composition are recorded and become visible in the **public post-game log** after the game ends (see [ASSUMPTIONS.md — Section 5](./ASSUMPTIONS.md)).
 - **Timing**: the Wild Draw Four challenge window (5 seconds) opens immediately when the Wild Draw Four is played and runs **before** the next player's 45-second turn timer starts. The next player must decide to challenge or draw within this 5-second window. After the window resolves (challenge outcome determined, or no challenge and the player draws), the 45-second turn timer starts for the player whose turn it now is.
-- **When Uno! is also in play**: if the Wild Draw Four was the player's second-to-last card and Uno! was called, the Uno! challenge window (5 seconds, open to all opponents) runs first. After the Uno! window closes, the next player's turn begins with the Wild Draw Four challenge window (separate 5-second timer). The 45-second turn timer starts only after both windows have resolved.
+- **When the Wild Draw Four is the player's second-to-last card**: a combined Uno! + Wild Draw Four window applies — see [RULESET.md — Section 8](./RULESET.md) for the full combined window rules.
 
 ### 4.3 Spectator View
 
@@ -155,7 +155,6 @@ UnoArena uses a **placement-based multi-player Elo extension** for casual games.
 3. **Elo delta**: `ΔR_i = K × (S_i − E_i)`
 4. **K-factor**: 32 for players with fewer than 20 completed casual games; 16 for 20–99 games; 12 for 100+ games.
 5. **Points bonus**: since points are 0 or negative, "above the room average" means a smaller absolute deficit. If a player's absolute card-value deficit is at most **80% of the room average absolute deficit** (i.e., they performed at least 20% better than average), `ΔR_i` is increased by +3. The winner (0 points) always qualifies if the room average is negative.
-6. **Shared positions**: players who share a finishing position (tied on both points and card count — see Section 3) receive the same `rank_i` in the Elo formula. The next distinct rank is the shared rank plus the number of tied players.
 
 Forfeiting players are assigned rank N (last place) regardless of when they forfeited. See also [ASSUMPTIONS.md — Section 3](./ASSUMPTIONS.md) for full derivation rationale.
 

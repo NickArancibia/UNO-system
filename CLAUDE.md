@@ -35,7 +35,7 @@ Core Engineering Challenges:
     Forfeit in a casual room ends the player's participation; the game continues with remaining players.
     Forfeit in a tournament room counts as a loss for that match; the player is eliminated from the tournament.
     A player who reconnects within the window resumes with their original hand intact.
-    Round-Based Tournament Progression Rules: Tournaments proceed in elimination rounds until 10 or fewer players remain, at which point a final room is created. Each round, players are distributed into rooms of up to 10 players. Within a room, players play a best-of-three series (a "match" = up to 3 individual games). The top 3 players by match wins advance; in case of a tie, the player with the lower cumulative card-point total in the tied games advances. If still tied, advancement order is determined by earliest time of final-game completion.
+    Round-Based Tournament Progression Rules: Tournaments proceed in elimination rounds until 10 or fewer players remain, at which point a final room is created. Each round, players are distributed into rooms of up to 10 players. Within a room, players play a fixed three-game match (always exactly 3 individual games). The top 3 players by cumulative point total across all 3 games advance; in case of a tie, the player with fewer cumulative cards remaining advances. If still tied, advancement order is randomized.
     Security Hardening, Session Control & Rate Limiting: Include strong auth boundaries, input validation, signed event integrity where needed, and audit logs for sensitive operations. Enforce single-active-session per player (new login invalidates old session). Apply multi-layer rate limits (per IP, per user, per room/tournament action) with adaptive throttling.
     Tournament Analytics & Bracket Read Models: The platform must absorb spikes of game.completed events and update read-optimized views for player stats and bracket visualization.
     Elo & Ranking Rules: The global Elo-based ranking applies to casual (ad-hoc) rooms only. Tournament play uses a separate tournament-placement rating. Elo is updated once per completed game (not per match or per tournament). The Elo delta is calculated from final placement order within the room (1st through last). Abandoned games (forfeit by all remaining players) do not affect Elo.
@@ -88,7 +88,7 @@ Your assigment submission must include:
 
 
     Ubiquitous language with precise definitions.
-    Must distinguish: game (single Uno game), match (best-of-three series within a room), round (one elimination tier in a tournament), tournament.
+    Must distinguish: game (single Uno game), match (fixed three-game series within a tournament room), round (one elimination tier in a tournament), tournament.
 
 
     Bounded contexts and context map
