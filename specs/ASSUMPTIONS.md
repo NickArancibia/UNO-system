@@ -87,7 +87,40 @@ The post-game public log records all of the following:
 
 ---
 
-## 6. Open Decisions (Deferred)
+## 6. Authentication Model
+
+Authentication uses a **hybrid JWT + server-side invalidation record** approach (Option 3).
+
+### Mechanism
+
+1. On login, the server issues a signed JWT containing the player ID and an `issued_at` timestamp.
+2. The server writes a single record per player to a central store: `{ player_id → valid_sessions_from: <timestamp> }`.
+3. On every authenticated request, the server:
+   - Verifies the JWT signature (stateless).
+   - Reads the player's `valid_sessions_from` record and rejects the token if `issued_at` predates it.
+
+### Single-session enforcement
+
+When a player logs in from a new device:
+- A new JWT is issued with the current timestamp.
+- `valid_sessions_from` is updated to that timestamp.
+- All tokens issued before that timestamp are now invalid — including any active session on another device.
+- If the invalidated session was in an active game, the standard 60-second reconnection window applies (see [CONSTRAINTS.md — Section 2.5](./CONSTRAINTS.md)).
+
+### Design rationale
+
+| Property | Benefit |
+|---|---|
+| JWT for signature verification | No store lookup needed to verify token integrity; scales horizontally |
+| One record per player (not per token) | Minimal storage; instant invalidation without a growing blocklist |
+| Server-side `valid_sessions_from` | Cleanly enforces the single-session invariant on new login |
+| Server-generated timestamps | Consistent with the general rule that client clocks are not trusted |
+
+---
+
+## 7. Open Decisions (Deferred)
+
+
 
 | # | Decision | Notes |
 |---|---|---|
@@ -116,3 +149,4 @@ The post-game public log records all of the following:
 | R8 | Multi-card draw when draw pile is insufficient | Server pre-checks draw pile size before the draw begins and appends a reshuffled discard pile if needed; if still insufficient, remaining penalty is waived. |
 | R9 | Session reconnection definition | Reconnection is complete only when session is re-established **and** game state is fully synchronized. |
 | R10 | Tournament Elo formula inputs | Formula uses final placement only. Rounds reached and win rates are profile statistics used solely to sub-order same-round eliminees for placement bucketing. |
+| R11 | Authentication mechanism | **JWT + server-side invalidation record** — JWT for stateless signature verification; one `valid_sessions_from` timestamp per player enforces single-session rule. See Section 6. |
