@@ -54,7 +54,7 @@ The matchmaking system assembles rooms from the Quick Play queue. Rooms are not 
 - When the timer expires for a **connected** player, the system automatically executes **Option B** on the player's behalf (draw one card, end turn). This counts as a turn taken. For disconnected players, turns are skipped instead (see Section 2.5).
 - The AFK counter increments each time the turn timer expires for a player **consecutively**.
 - The AFK counter **resets to zero** after any successful action submitted by the player.
-- The **Uno! challenge window** (5 seconds — see [RULESET.md — Section 7](./RULESET.md)) runs concurrently within the next player's 45-second turn timer. It does not pause or reset the turn timer.
+- The **Uno! challenge window** (5 seconds — see [RULESET.md — Section 8](./RULESET.md)) runs concurrently within the next player's 45-second turn timer. It does not pause or reset the turn timer.
 
 ### 2.4 AFK Detection & Automatic Forfeit
 
@@ -95,7 +95,7 @@ The matchmaking system assembles rooms from the Quick Play queue. Rooms are not 
 
 - A casual game consists of **multiple rounds** played until one player reaches **500 cumulative points**.
 - The first player to reach or exceed 500 points at the end of any round wins the game.
-- Scoring follows the rules in [RULESET.md — Section 8](./RULESET.md).
+- Scoring follows the rules in [RULESET.md — Section 9](./RULESET.md).
 - After each round, cards are collected, reshuffled, and a new round begins with all remaining active players.
 - There is no maximum game duration for casual games.
 
@@ -223,7 +223,7 @@ Game state is **versioned**. Each game has a monotonically increasing **state ve
 - If the server's current version does not match the submitted version, the command is rejected with a **conflict response** and no state change occurs.
 - The client reconciles by consuming the event stream to reach the current state, then retries if the action is still valid.
 
-This ensures concurrent conflicting actions (e.g., simultaneous Uno! challenges, simultaneous Wild Draw Four challenges) are resolved deterministically: the first command whose version matches wins; all others are rejected.
+This ensures concurrent conflicting actions (e.g., two simultaneous jump-in attempts, simultaneous Uno! challenges) are resolved deterministically: the first command whose version matches wins; all others are rejected.
 
 **Idempotency:**
 - Every command carries a **client-generated UUID** (idempotency key).

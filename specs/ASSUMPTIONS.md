@@ -78,7 +78,7 @@ The post-game public log records all of the following:
 - Every card drawn (from draw pile or penalty), with card identity attributed to the drawing player.
 - All Uno! calls (player, timestamp) and challenge outcomes (challenger, result, penalty applied).
 - Wild Draw Four plays, challenge declarations, the accused player's full hand reveal, and challenge outcomes.
-- Turn advances, skips (from Skip cards, Draw Two, Wild Draw Four), direction changes.
+- Turn advances, skips (from Skip cards, Draw Two, Wild Draw Four), direction changes, jump-in events.
 - Disconnection events, reconnection events, forfeit events, AFK forfeit triggers.
 - Round-end events with scores; game-end events with final standings.
 - Match-end events (tournament) with game win counts and advancement decisions.
