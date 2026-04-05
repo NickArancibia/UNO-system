@@ -15,7 +15,55 @@ This document records all assumptions made during the domain design phase and op
 
 ---
 
-## 2. Concurrency and Stale Command Model
+## 2. Cross-Region Latency Fairness
+
+### 2.1 Problem
+
+The platform supports players from up to 11 regions worldwide. While matchmaking prefers same-region or adjacent-region rooms, tournaments with large player pools will inevitably produce cross-region rooms. In first-come-first-served races — specifically `JumpIn` and `ChallengeUno` — a player closer to the server gains a structural advantage under a pure packet-arrival model. This is addressed through a server-measured RTT adjustment.
+
+### 2.2 Server-Measured RTT
+
+- The server measures each player's **round-trip time (RTT)** via periodic heartbeat exchanges. The measurement is owned entirely by the server — the client reports nothing.
+- RTT is maintained as a **rolling average** in `PlayerSession.latency_profile` (`LatencyProfile` value object), updated on each heartbeat.
+- `LatencyProfile.measurement_available` is `false` until at least one complete heartbeat exchange has been recorded for the session.
+
+### 2.3 Effective Submission Time
+
+For any first-come-first-served race (`JumpIn`, `ChallengeUno`), the server computes:
+
+```
+effective_submission_time = server_arrival_time − (RTT / 2)
+```
+
+This estimates the moment the player actually acted on their client, without trusting any client-reported timestamp. `RTT / 2` is used under the assumption of **symmetric routing** (equal latency in each direction) — see caveat in §2.5.
+
+### 2.4 Race Resolution Policy
+
+When two or more valid submissions for the same race arrive within a **150ms server-arrival window**:
+
+1. Compute `effective_submission_time` for each submission.
+2. If the earliest effective time is more than **±20ms** ahead of all others: that submission wins. A `RaceResolved` event with `resolution_method: EffectiveTimestamp` is appended to the game log.
+3. If the top two effective times are within **±20ms** of each other (within measurement uncertainty), or if any submitter has `measurement_available: false`: the winner is chosen by **server-side RNG** with equal probability per submission. A `RaceResolved` event with `resolution_method: RNG` is appended.
+
+Submissions arriving more than 150ms after the first valid arrival are rejected with a conflict response regardless of effective time — they are not part of the race window.
+
+### 2.5 Known Assumptions and Caveats
+
+| Assumption | Caveat |
+|---|---|
+| Symmetric routing (RTT/2 for one-way latency) | Intercontinental paths are often asymmetric. RTT/2 is an approximation; actual one-way latency may differ by ±20–50ms on long-haul routes. This is the same assumption made by CS2 lag compensation and is accepted as good-enough in practice. |
+| Rolling RTT reflects current conditions | RTT can spike due to transient network conditions. A rolling average smooths spikes but may lag behind sudden changes. |
+| Heartbeat frequency | The frequency of heartbeat exchanges (and thus RTT freshness) is an infrastructure detail deferred to the connection protocol design phase. The domain assumes RTT is reasonably fresh at the time of any race. |
+| 150ms race window | Chosen to cover the worst-case intercontinental RTT difference (~300ms round-trip → ~150ms one-way difference). Actions arriving outside this window are unambiguously not simultaneous. |
+| ±20ms measurement uncertainty threshold | Conservative estimate for RTT measurement error and routing asymmetry. Actions with effective times within this band are genuinely indistinguishable; RNG is fair in this case. |
+
+### 2.6 Privacy of RTT Data
+
+Individual RTT values are **not exposed to other players** via the `RaceResolved` event broadcast. The `Spectator View` receives only `winner_player_id` and `resolution_method`. Full per-submission detail (individual RTT values and effective times) is retained in the **post-game log** for dispute resolution and audit purposes only.
+
+---
+
+## 3. Concurrency and Stale Command Model
 
 - A **state version number** per game is the primary concurrency control mechanism (see [CONSTRAINTS.md — Section 9](./CONSTRAINTS.md)).
 - **Rejected stale commands** result in a conflict response visible to the client. Clients are responsible for reconciling and retrying if the intended action is still valid in the current state.
@@ -24,9 +72,9 @@ This document records all assumptions made during the domain design phase and op
 
 ---
 
-## 3. Elo Formula Rationale
+## 4. Elo Formula Rationale
 
-### 3.1 Casual Multi-Player Elo
+### 4.1 Casual Multi-Player Elo
 
 The placement-based multi-player Elo extension (defined in [CONSTRAINTS.md — Section 5.2](./CONSTRAINTS.md)) is a standard adaptation of the two-player Elo model for N-player zero-sum rankings. It treats each player's final rank as the outcome of N−1 virtual one-on-one matches against every other participant.
 
@@ -47,7 +95,7 @@ The placement-based multi-player Elo extension (defined in [CONSTRAINTS.md — S
 - Player A (1200, 2nd): S = (3−2)/(3−1) = 0.5; E ≈ 0.65; K=12; ΔR ≈ −1.8
 - Player C (800, 3rd): S = (3−3)/(3−1) = 0.0; E ≈ 0.35; K=32; ΔR ≈ −11.2
 
-### 3.2 Tournament-Placement Elo
+### 4.2 Tournament-Placement Elo
 
 Defined in [TOURNAMENT_RULES.md — Section 8](./TOURNAMENT_RULES.md). The same pairwise model is applied post-tournament across all T participants using final placement as the ranking input.
 
@@ -62,7 +110,7 @@ Defined in [TOURNAMENT_RULES.md — Section 8](./TOURNAMENT_RULES.md). The same 
 
 ---
 
-## 4. Regional Matchmaking Assumptions
+## 5. Regional Matchmaking Assumptions
 
 - Region assignment at registration is **self-selected** and treated as immutable after the player's first 30 days. Region changes after that period require admin review.
 - **Cross-region matching thresholds** (how long the matchmaking system waits before expanding the regional search radius) are an implementation detail deferred to the infrastructure design phase.
@@ -70,7 +118,7 @@ Defined in [TOURNAMENT_RULES.md — Section 8](./TOURNAMENT_RULES.md). The same 
 
 ---
 
-## 5. Game Log Contents
+## 6. Game Log Contents
 
 The post-game public log records all of the following:
 
@@ -79,6 +127,7 @@ The post-game public log records all of the following:
 - All Uno! calls (player, timestamp) and challenge outcomes (challenger, result, penalty applied).
 - Wild Draw Four plays, challenge declarations, the accused player's hand composition as verified server-side (not shown to any player during the game — becomes public post-game), and challenge outcomes.
 - Turn advances, skips (from Skip cards, Draw Two, Wild Draw Four), direction changes, jump-in events.
+- Race resolution events (`RaceResolved`): all submissions with their server arrival times, effective submission times, RTT values used, winner, and resolution method (EffectiveTimestamp or RNG).
 - Disconnection events, reconnection events, forfeit events, AFK forfeit triggers.
 - Round-end events with scores; game-end events with final standings.
 - Match-end events (tournament) with game win counts and advancement decisions.
@@ -87,7 +136,7 @@ The post-game public log records all of the following:
 
 ---
 
-## 6. Authentication Model
+## 7. Authentication Model
 
 Authentication uses a **hybrid JWT + server-side invalidation record** approach (Option 3).
 
@@ -118,7 +167,7 @@ When a player logs in from a new device:
 
 ---
 
-## 7. Open Decisions (Deferred)
+## 8. Open Decisions (Deferred)
 
 
 

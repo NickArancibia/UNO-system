@@ -64,8 +64,10 @@ Play an identical card out of turn, resetting turn order from the jumping player
 | **Submitted by** | Any active player not currently taking their turn |
 | **Preconditions** | Game is `in_progress`; no challenge window is open; the submitted card is identical (same color + same rank/symbol) to the top of the discard pile; the submitter holds that card; the submitter is not the player who just played the top card; card type is not Wild or WD4 |
 | **Rejection reasons** | Card does not match top of discard pile exactly; player is the one who just played that card (self-jump); card is Wild or WD4; challenge window open; game not `in_progress`; stale state version |
-| **Concurrency** | `[stale-version]` `[idempotent]` — first valid submission wins; all others rejected with conflict |
-| **Produces** | `JumpInOccurred` → card effects applied (same as `PlayCard`) → `TurnAdvanced` |
+| **Concurrency** | `[stale-version]` `[idempotent]` — resolved via **RTT-adjusted effective timestamp** (see race resolution policy below); all losing submissions rejected with conflict |
+| **Produces** | `JumpInOccurred` → card effects applied (same as `PlayCard`) → `TurnAdvanced`; if multiple simultaneous valid submissions: `RaceResolved` emitted before `JumpInOccurred` |
+
+**Race resolution policy for `JumpIn`:** When two or more valid `JumpIn` submissions arrive within a 150ms server-arrival window, the server computes `effective_submission_time = arrival_time − RTT/2` for each submitter using their `LatencyProfile`. The submission with the earliest effective time wins. If effective times are within ±20ms of each other (within measurement uncertainty), or if any submitter's `LatencyProfile.measurement_available` is false, the winner is chosen by server-side RNG with equal probability per submission. The outcome is recorded in a `RaceResolved` event appended to the game log before any effect is applied.
 
 ---
 
@@ -92,8 +94,10 @@ Challenge that a player did not call "Uno!" after playing their second-to-last c
 | **Submitted by** | Any opponent (not the player who played the second-to-last card) |
 | **Preconditions** | Game is `in_progress`; a Uno! challenge window is open; the target player has not yet called Uno!; the challenger has not already challenged in this window |
 | **Rejection reasons** | No open Uno! challenge window; target already called Uno!; challenge already issued in this window; submitter is the target player; window expired; stale state version |
-| **Concurrency** | `[stale-version]` `[idempotent]` — first valid challenge wins; all others rejected |
-| **Produces** | `UnoChallengeIssued` → `UnoChallengeResolved` → `PenaltyCardsDrawn` (2 cards to guilty party) → `ChallengeWindowClosed` |
+| **Concurrency** | `[stale-version]` `[idempotent]` — resolved via **RTT-adjusted effective timestamp** (see race resolution policy below); all losing submissions rejected with conflict |
+| **Produces** | `UnoChallengeIssued` → `UnoChallengeResolved` → `PenaltyCardsDrawn` (2 cards to guilty party) → `ChallengeWindowClosed`; if multiple simultaneous valid submissions: `RaceResolved` emitted before `UnoChallengeIssued` |
+
+**Race resolution policy for `ChallengeUno`:** Same policy as `JumpIn` above. When two or more opponents submit `ChallengeUno` within a 150ms server-arrival window, effective submission times are compared; earliest wins. Ties within ±20ms or missing `LatencyProfile` fall back to server-side RNG. `RaceResolved` is appended to the game log before `UnoChallengeIssued`.
 
 ---
 
@@ -349,6 +353,7 @@ Mark a game for admin review.
 | `UnoChallengeResolved` | `GameSession` | `game_id`, `challenger_id`, `target_player_id`, `outcome: Guilty\|Innocent`, `state_version` | Spectator View |
 | `WildDrawFourChallengeIssued` | `GameSession` | `game_id`, `challenger_id`, `accused_player_id`, `state_version` | Spectator View |
 | `WildDrawFourChallengeResolved` | `GameSession` | `game_id`, `challenger_id`, `accused_player_id`, `outcome: Guilty\|Innocent`, `accused_hand_at_time` *(withheld from spectators during game; in post-game log)*, `state_version` | Spectator View (outcome only, hand withheld), Moderation/Admin |
+| `RaceResolved` | `GameSession` | `game_id`, `race_type: JumpIn\|UnoChallenge`, `submissions: List<{player_id, arrival_time, effective_submission_time, rtt_used_ms, rtt_available: bool}>`, `winner_player_id`, `resolution_method: EffectiveTimestamp\|RNG`, `state_version` | Spectator View (winner only; individual RTT values withheld), game log (full detail for audit) |
 | `PlayerDisconnected` | `GameSession` | `game_id`, `player_id`, `reconnection_window_expires_at` | Spectator View, Tournament Orchestration |
 | `PlayerReconnected` | `GameSession` | `game_id`, `player_id` | Spectator View |
 | `PlayerForfeited` | `GameSession` | `game_id`, `player_id`, `reason: Voluntary\|AFK\|ReconnectionExpired`, `remaining_active_players` | Spectator View, Tournament Orchestration, Ranking |

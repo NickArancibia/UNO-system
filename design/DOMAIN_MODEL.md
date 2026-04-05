@@ -181,6 +181,7 @@ Manages the single active session per player, JWT validity, and reconnection win
 - `valid_sessions_from` — timestamp; tokens issued before this timestamp are invalid
 - `current_jwt_issued_at` — timestamp of the currently valid JWT
 - `reconnection_window` — optional `ReconnectionWindow` value object (null when player is connected or not in a game)
+- `latency_profile` — `LatencyProfile` value object; updated by the server on each heartbeat exchange; governs effective submission time computation for race resolution
 
 **Key invariants:**
 1. At most one session is valid per player at any time.
@@ -224,6 +225,7 @@ Value objects have no identity; they are defined entirely by their attributes an
 | `TimerWindow` | `type: TurnTimer\|ChallengeWindow\|ReconnectionWindow`, `started_at`, `duration_ms`, `expired: bool` | `GameSession`, `PlayerSession` | Generic timer; all timers are server-generated and server-enforced |
 | `Region` | `region_id`, `name` | `PlayerProfile` | One of 11 defined regions; governs matchmaking priority |
 | `AbuseRecord` | `player_id`, `violations: List<Violation>`, `warnings_issued`, `suspensions_in_7_days` | `PlayerSession` (via Moderation) | Tracks escalation state for rate-limit abuse |
+| `LatencyProfile` | `rolling_rtt_ms: float`, `sample_count: int`, `last_measured_at: timestamp`, `measurement_available: bool` | `PlayerSession` | Server-measured rolling RTT average (not client-reported). Used to compute `effective_submission_time = arrival_time − RTT/2` for race resolution. `measurement_available` is false until at least one heartbeat exchange completes. |
 
 ---
 

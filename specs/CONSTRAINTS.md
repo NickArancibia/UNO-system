@@ -225,12 +225,22 @@ Game state is **versioned**. Each game has a monotonically increasing **state ve
 - If the server's current version does not match the submitted version, the command is rejected with a **conflict response** and no state change occurs.
 - The client reconciles by consuming the event stream to reach the current state, then retries if the action is still valid.
 
-This ensures concurrent conflicting actions (e.g., two simultaneous jump-in attempts, simultaneous Uno! challenges) are resolved deterministically: the first command whose version matches wins; all others are rejected.
-
 **Idempotency:**
 - Every command carries a **client-generated UUID** (idempotency key).
 - If the server receives the same UUID twice, it returns the original outcome without reprocessing.
 - This protects against duplicate submissions from at-least-once delivery retries.
+
+**Race resolution for multi-player first-come-first-served actions (`JumpIn`, `ChallengeUno`):**
+
+Pure packet-arrival order disadvantages players with higher network latency (e.g., cross-region rooms). To ensure fairness, the server uses **RTT-adjusted effective submission timestamps** for these actions:
+
+1. The server maintains a server-measured rolling RTT per player session (`PlayerSession.latency_profile`). Client clocks are never trusted.
+2. For each submission in a race, the server computes: `effective_submission_time = server_arrival_time − RTT/2`
+3. Submissions arriving within a **150ms server-arrival window** are treated as part of the same race. The submission with the earliest effective time wins.
+4. If the two earliest effective times are within **±20ms** of each other (measurement uncertainty), or if any participant's RTT measurement is unavailable, the winner is chosen by **server-side RNG** with equal probability — the same RNG mechanism used for all other random outcomes in the game.
+5. A `RaceResolved` event is appended to the immutable game log before any effect is applied, recording the resolution method (EffectiveTimestamp or RNG) and full per-submission detail for audit purposes.
+
+This mechanism applies **only** to `JumpIn` and `ChallengeUno` — the two commands where multiple players are simultaneously eligible. All other game commands have a single eligible submitter and are serialized by `state_version` alone.
 
 ---
 

@@ -21,30 +21,38 @@ This document covers every required failure-path category from the assignment. F
 ---
 
 ### 1.2 Two players simultaneously attempt to jump in
-**Trigger:** Players C and D both hold a card identical to the top of the discard pile and submit `JumpIn` at the same moment.
+**Trigger:** Players C (region `EU-W`) and D (region `AS-E`) both hold a card identical to the top of the discard pile and submit `JumpIn` at nearly the same moment. Both carry `state_version: N`. C's packet arrives 80ms before D's purely because C is closer to the server.
 
-**Behavior:**
-- Both commands carry the same `state_version: N`. First arrival is validated and accepted; jump-in occurs from that player's position.
-- Second arrival: state is now N+1 — rejected with 409 Conflict.
-- The losing player's card remains in their hand; they did not jump in.
+**Behavior (with RTT-adjusted race resolution):**
+- Both submissions arrive within the 150ms race window — they are treated as a race, not as a clear sequential pair.
+- Server computes effective submission times:
+  - C: `arrival_C − RTT_C/2` (e.g., arrival at T+10ms, RTT 20ms → effective T+0ms)
+  - D: `arrival_D − RTT_D/2` (e.g., arrival at T+90ms, RTT 200ms → effective T−10ms)
+- D's effective time is earlier — D actually pressed the button first. D wins despite the later packet arrival.
+- If effective times are within ±20ms of each other: server-side RNG picks the winner with equal probability.
+- `RaceResolved` is appended to the game log before `JumpInOccurred`, recording both submissions, effective times, RTT values, and resolution method.
+- Losing submission (C) is rejected with 409 Conflict; C's card remains in hand.
 
-**Emitted events:** `JumpInOccurred`, card effects, `TurnAdvanced` (winner) — conflict response (loser).
+**Emitted events:** `RaceResolved {race_type: JumpIn, winner: D, resolution_method: EffectiveTimestamp}`, `JumpInOccurred`, card effects, `TurnAdvanced` — conflict response (C).
 
-**Invariant protected:** At most one jump-in per turn cycle; turn order is unambiguous.
+**Invariant protected:** At most one jump-in per turn cycle; turn order is unambiguous. Cross-region latency does not systematically advantage players closer to the server.
 
 ---
 
 ### 1.3 Two opponents simultaneously challenge Uno!
-**Trigger:** Players B and C both submit `ChallengeUno` against Player A within the 5-second window.
+**Trigger:** Players B (region `NA-W`) and C (region `EU-E`) both submit `ChallengeUno` against Player A within the 5-second window, within milliseconds of each other.
 
-**Behavior:**
-- Both carry `state_version: N`. First valid challenge received is accepted and processed.
-- Second challenge: rejected with 409 Conflict (challenge already issued in this window).
-- Only one challenge outcome is resolved; one penalty applied.
+**Behavior (with RTT-adjusted race resolution):**
+- Both submissions arrive within the 150ms race window.
+- Server computes effective submission times using each player's `LatencyProfile.rolling_rtt_ms`.
+- The player with the earlier effective submission time wins the challenge right.
+- If effective times are within ±20ms: server-side RNG resolves with equal probability.
+- `RaceResolved` is appended to the game log before `UnoChallengeIssued`.
+- Only one `UnoChallengeIssued` is emitted; one penalty outcome resolved; losing submission rejected with 409 Conflict.
 
-**Emitted events:** `UnoChallengeIssued`, `UnoChallengeResolved`, `PenaltyCardsDrawn` (winner) — conflict response (loser).
+**Emitted events:** `RaceResolved {race_type: UnoChallenge, winner: B or C, resolution_method: EffectiveTimestamp or RNG}`, `UnoChallengeIssued`, `UnoChallengeResolved`, `PenaltyCardsDrawn` — conflict response (loser).
 
-**Invariant protected:** At most one Uno! challenge per window; one penalty outcome.
+**Invariant protected:** At most one Uno! challenge per window; one penalty outcome. Fairness preserved across regions.
 
 ---
 
@@ -102,6 +110,23 @@ This document covers every required failure-path category from the assignment. F
 **Emitted events:** None (rejection response only).
 
 **Invariant protected:** Only the player required to draw can challenge a WD4.
+
+---
+
+### 1.8 RTT measurement unavailable at race time
+**Trigger:** Player E just reconnected to an active game 2 seconds ago — not enough heartbeat exchanges have completed to establish a reliable `LatencyProfile`. Player F (established session, full RTT data) submits `JumpIn` at the same moment as Player E.
+
+**Behavior:**
+- Both submissions arrive within the 150ms race window.
+- Server checks `LatencyProfile.measurement_available` for each submitter:
+  - F: `measurement_available: true` — effective time computable.
+  - E: `measurement_available: false` — effective time cannot be reliably computed.
+- Because at least one participant lacks a valid RTT measurement, the server **falls back to RNG** regardless of F's computed effective time. Both submissions receive equal probability.
+- `RaceResolved` is emitted with `resolution_method: RNG`; the per-submission entry for E records `rtt_available: false`.
+
+**Emitted events:** `RaceResolved {resolution_method: RNG, submissions: [{player: F, rtt_available: true, ...}, {player: E, rtt_available: false}]}`, then winner's action proceeds normally.
+
+**Invariant protected:** A player cannot gain an advantage by deliberately triggering reconnection to invalidate their RTT profile. RNG fallback is no worse than the pre-RTT model, and the audit log makes the reason transparent.
 
 ---
 
