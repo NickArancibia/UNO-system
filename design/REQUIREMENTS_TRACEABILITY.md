@@ -148,7 +148,6 @@ This document maps every mandatory deliverable from the assignment specification
 |---|---|---|
 | Main business flows via EventStorming | [ASCII_FLOW.md](./ASCII_FLOW.md) | Sections 4, 5 |
 | Exceptional flows (timeouts, stale commands, disconnects, forfeits) | [ASCII_FLOW.md](./ASCII_FLOW.md) | Sections 2, 6 |
-| [ASCII_FLOW.md](./ASCII_FLOW.md) | Sections 4, 5 (policies shown) |
 | Cross-context interactions triggered by domain events | [ASCII_FLOW.md](./ASCII_FLOW.md) | Section 8 |
 | Invariants and policy decisions | [ASCII_FLOW.md](./ASCII_FLOW.md) | Sections 4, 5 (`{POL:}` nodes) |
 | Timer window timing models | [ASCII_FLOW.md](./ASCII_FLOW.md) | Section 3 |
@@ -194,33 +193,3 @@ This document maps every mandatory deliverable from the assignment specification
 | 9 | Whether partial-room game results contribute to dispute system | No | Assumed yes; no special domain rules required |
 | 10 | Behavior when tournament admin-cancel occurs mid-round re: partial Elo | Partial | Currently: no Elo for any game in cancelled tournament; may be reconsidered |
 
----
-
-## 3. Cross-Reference Consistency Validation
-
-Checks that no contradictory rule text exists between specs and design artifacts.
-
-| Rule | Source | Design artifact | Status |
-|---|---|---|---|
-| Turn timer is 45 seconds | CONSTRAINTS.md §2.3 | GLOSSARY.md §3, EVENT_FLOWS.md Flow 1 | ✓ Consistent |
-| Uno! window is 5 seconds, concurrent with turn timer | RULESET.md §8, CONSTRAINTS.md §2.3 | EVENT_FLOWS.md Flow 1 NOTE, ASCII_FLOW.md §3.2 | ✓ Consistent (fixed from earlier inconsistency) |
-| WD4 window is 5 seconds, sequential before turn timer | RULESET.md §6 | EVENT_FLOWS.md Flow 1, ASCII_FLOW.md §3.3 | ✓ Consistent |
-| Combined window pauses on any action | RULESET.md §8 | ASCII_FLOW.md §3.4, DOMAIN_MODEL.md `ChallengeWindow` | ✓ Consistent |
-| Reconnection window is 60 seconds | CONSTRAINTS.md §2.5 | GLOSSARY.md §2, DOMAIN_MODEL.md `ReconnectionWindow`, EVENT_FLOWS.md Flow 4 | ✓ Consistent |
-| AFK forfeit at 3 consecutive expired timers (connected only) | CONSTRAINTS.md §2.4 | DOMAIN_MODEL.md §1.1, ASCII_FLOW.md §6 | ✓ Consistent |
-| Top 3 advance per tournament room | TOURNAMENT_RULES.md §4 | DOMAIN_MODEL.md §1.3, COMMANDS_EVENTS.md §2.3 | ✓ Consistent |
-| All active players advance if ≤3 remain | TOURNAMENT_RULES.md §4 | DOMAIN_MODEL.md §1.3 invariant, FAILURE_PATHS.md §1.5 | ✓ Consistent |
-| Match timeout is 20 minutes | TOURNAMENT_RULES.md §3.1 | DOMAIN_MODEL.md §1.3, EVENT_FLOWS.md Flow 2 Phase C | ✓ Consistent |
-| Casual Elo updated per completed game; tournament Elo once post-tournament | CONSTRAINTS.md §5.1 | DOMAIN_MODEL.md §1.6, EVENT_FLOWS.md Flow 3 | ✓ Consistent |
-| Voided game: no Elo changes for any player | CONSTRAINTS.md §2.6 | COMMANDS_EVENTS.md §3.1 causality, CONSISTENCY_RECOVERY.md §3.1 | ✓ Consistent |
-| Cancelled tournament: no Elo for any game in it | CONSTRAINTS.md §7 | CONSISTENCY_RECOVERY.md §3.3, FAILURE_PATHS.md §4.5 | ✓ Consistent |
-| Spectators see hand counts but never card identities | CONSTRAINTS.md §4.3 | CONTEXT_MAP.md §2.5, DOMAIN_MODEL.md §5, FAILURE_PATHS.md §6 | ✓ Consistent |
-| WD4 hand withheld during game; public post-game | CONSTRAINTS.md §4.2, ASSUMPTIONS.md R6 | FAILURE_PATHS.md §6.3, COMMANDS_EVENTS.md `WildDrawFourChallengeResolved` | ✓ Consistent |
-| Single active session per player | CONSTRAINTS.md §1 | DOMAIN_MODEL.md §1.7, CONSISTENCY_RECOVERY.md §4.5 | ✓ Consistent |
-| Forfeit = last place for Elo; voided game = no Elo | CONSTRAINTS.md §5.3 | DOMAIN_MODEL.md §1.6, EVENT_FLOWS.md Flow 3 | ✓ Consistent |
-| Minimum 1,000 confirmed players to start tournament | TOURNAMENT_RULES.md §2 | DOMAIN_MODEL.md §1.5 invariant | ✓ Consistent |
-| Phase-start thresholds vary by round number | TOURNAMENT_RULES.md §5 | DOMAIN_MODEL.md §1.4, EVENT_FLOWS.md Flow 2 | ✓ Consistent |
-| Waiting state defined by timer not started (not purely player count) | CONSTRAINTS.md §2.2 | GLOSSARY.md §4 (corrected) | ✓ Consistent |
-| Uno! unchallenged window expiry: no penalty | RULESET.md §8 | COMMANDS_EVENTS.md §3.1, EVENT_FLOWS.md Flow 1, ASCII_FLOW.md §3.2, §3.4 | ✓ Consistent (fixed) |
-| Wild/WD4 color declaration is atomic with PlayCard | RULESET.md §4.4, §4.5 | COMMANDS_EVENTS.md `PlayCard`, EVENT_FLOWS.md Flow 1 Phase D, ASCII_FLOW.md §4 | ✓ Consistent (fixed) |
-| All non-number starting cards go to the bottom of the draw pile | RULESET.md §2, §4.5 | DOMAIN_MODEL.md §1.1 (GameSession init) | ✓ Consistent (fixed) |

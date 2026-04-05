@@ -39,9 +39,8 @@ The authoritative owner of all in-game state for a single game. This is the most
 7. When a challenge window is open, only the eligible challenger(s) may submit challenge actions.
 8. The game ends immediately when any player's hand reaches zero cards.
 9. A forfeited player's hand is discarded; they are removed from `players`; turn order adjusts around them.
-10. If a forfeit leaves 0 active players, the game is voided (no scores, no Elo).
-11. If a forfeit leaves 1 active player, that player wins immediately.
-12. All random outcomes (shuffle, deal, draw) are generated server-side and appended to the event log before being broadcast.
+10. If a forfeit leaves 1 active player, that player wins immediately (`GameCompleted`). Because commands are serialized, reaching 0 active players through the forfeit path is unreachable — the last-player-wins rule always fires first. The `void` outcome applies only to admin-initiated `VoidGameResult` on an already-completed game.
+11. All random outcomes (shuffle, deal, draw) are generated server-side and appended to the event log before being broadcast.
 
 ---
 
@@ -53,7 +52,7 @@ The lifecycle container for a group of players. Governs lobby logic, player memb
 **State:**
 - `room_id` — unique identifier
 - `room_type` — `casual` | `tournament`
-- `status` — `waiting` | `lobby` | `in_progress` | `completed`
+- `status` — `waiting` | `lobby` | `in_progress` | `completed` | `cancelled`
 - `players` — list of `RoomPlayer` entities (active players registered in the room)
 - `spectators` — list of player IDs (no cap)
 - `lobby_timer_start` — timestamp when the countdown began (null if not yet started)
@@ -68,7 +67,7 @@ The lifecycle container for a group of players. Governs lobby logic, player memb
 5. If the timer expires with fewer than 2 players, the room is cancelled.
 6. No player may join as an active player once the room is `in_progress`.
 7. A player may not be an active player in more than one room simultaneously (enforced in coordination with Identity/Session).
-8. State transitions are one-way: `waiting → lobby → in_progress → completed`. No rollback.
+8. State transitions are one-way; no rollback. The normal path is `waiting → lobby → in_progress → completed`. A room may also transition from `in_progress` to `cancelled` if the tournament it belongs to is cancelled by an admin (`TournamentCancelled`); this does not produce final standings and no Elo is applied.
 
 ---
 
@@ -192,6 +191,26 @@ Manages the single active session per player, JWT validity, and reconnection win
 
 ---
 
+### 1.8 MatchmakingQueue
+**Owned by:** Room Gameplay context
+
+The consistency boundary for casual Quick Play queue membership. Owns all state required to determine who is waiting, whether a player is eligible to join, and when enough compatible players have accumulated to assemble a room. Tournament queue membership is **not** managed here — it is owned by `TournamentRound.qualifier_pool`.
+
+**State:**
+- `queue_type` — `casual` (one logical queue per game mode)
+- `entries` — list of `QueueEntry` value objects, each carrying `player_id`, `joined_at`, `elo_rating`, `region`, and `expires_at`
+- `status` — `active` | `paused` (paused during maintenance; no new entries accepted)
+
+**Key invariants:**
+1. A player may have at most one active `QueueEntry` at any time — duplicate `JoinQueue` submissions are rejected.
+2. A player whose `Room.status` is `in_progress` (i.e., in an active game) may not join the queue.
+3. A suspended or banned player is rejected at the session boundary before this aggregate is reached.
+4. A `QueueEntry` expires after a server-defined timeout; expiry emits `QueueEntryExpired` and removes the entry atomically.
+5. Room assembly is triggered when the queue contains sufficient compatible entries (Elo proximity + region preference), with a minimum of 2 and a maximum of 10 entries per room. The assembly policy is server-side; the aggregate emits `RoomAssemblyTriggered`, removes the selected entries atomically, and Room Gameplay proceeds to create the room.
+6. If a selected player's session becomes invalid between `RoomAssemblyTriggered` and `RoomCreated` confirmation, that player is dropped from the assembled set. If the remaining set falls below 2, assembly is cancelled and the remaining entries are returned to the queue.
+
+---
+
 ## 2. Entities
 
 Entities have identity but live within an aggregate's consistency boundary.
@@ -202,6 +221,7 @@ Entities have identity but live within an aggregate's consistency boundary.
 | `RoomPlayer` | `Room` | `player_id`, `joined_at`, `status: active\|forfeited` | Tracks a player's membership and status within a room |
 | `MatchGame` | `Match` | `game_id`, `sequence_number` (1–3), `status`, `placements: List<GamePlacement>` | Records the result of one game within a Bo3 match |
 | `TournamentRoom` | `TournamentRound` | `room_id`, `player_ids`, `match_id`, `advancement_result` | Links a physical room and its match result to a tournament round |
+| `QueueEntry` | `MatchmakingQueue` | `player_id`, `joined_at`, `elo_rating`, `region`, `expires_at` | One player's place in the casual queue; immutable once added; removed on assembly or expiry |
 
 ---
 
@@ -285,3 +305,4 @@ Spectator View is a projection context — it owns no aggregates. Its DDD artifa
 | `Tournament` | Eventual consistency — rounds complete sequentially | Reacts to `RoundCompleted`; emits `TournamentCompleted` |
 | `PlayerProfile` | Strong consistency for Elo updates (one update per completed game or tournament) | Reacts to `GameCompleted` (casual Elo) and `TournamentCompleted` (tournament Elo) |
 | `PlayerSession` | Strong consistency for single-session invariant | Emits `SessionInvalidated`; reacts to login commands |
+| `MatchmakingQueue` | Strong consistency for queue membership (one entry per player) | Emits `PlayerJoinedQueue`, `QueueEntryExpired`, `RoomAssemblyTriggered`; no direct calls to other aggregates |

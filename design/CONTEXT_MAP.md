@@ -51,7 +51,7 @@ This document defines the six bounded contexts of UnoArena, their responsibiliti
 **Role:** Upstream core. The authoritative owner of all in-game state.
 
 **Responsibilities:**
-- Owns the `GameSession` and `Room` aggregates.
+- Owns the `GameSession`, `Room`, and `MatchmakingQueue` aggregates. Tournament queue membership is **not** owned here — it is managed by `TournamentRound.qualifier_pool` in Tournament Orchestration.
 - Enforces all UNO rules: legal play validation, turn order, special card effects, Draw Two stacking, jump-in, draw pile exhaustion.
 - Manages the `state version` and rejects stale commands with conflict responses.
 - Enforces idempotency via `idempotency key` on all game commands.

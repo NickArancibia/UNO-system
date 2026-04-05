@@ -125,7 +125,7 @@ Voluntarily and permanently leave the current game.
 | **Preconditions** | Player is an active (non-forfeited) participant in the game |
 | **Rejection reasons** | Player already forfeited; player not in this game |
 | **Concurrency** | `[idempotent]` — duplicate forfeit submissions return original outcome |
-| **Produces** | `PlayerForfeited` → conditionally: `GameVoided` (0 players left), `GameCompleted` (1 player left), or game continues (2+ players left) |
+| **Produces** | `PlayerForfeited` → conditionally: `GameCompleted` (1 player left — that player wins), or game continues (2+ players left) |
 
 ---
 
@@ -138,7 +138,7 @@ Enter the casual Quick Play matchmaking queue.
 
 | Field | Value |
 |---|---|
-| **Aggregate** | `Room` (via matchmaking) |
+| **Aggregate** | `MatchmakingQueue` |
 | **Submitted by** | Any authenticated player not currently in an active game or queue |
 | **Preconditions** | Player session is valid; player is not already in a queue or active game; player account is not suspended or banned |
 | **Rejection reasons** | Already in queue; already in active game; session invalid; account suspended/banned |
@@ -152,7 +152,7 @@ Exit the casual matchmaking queue before a room is assigned.
 
 | Field | Value |
 |---|---|
-| **Aggregate** | `Room` (via matchmaking) |
+| **Aggregate** | `MatchmakingQueue` |
 | **Submitted by** | Player currently in the queue |
 | **Preconditions** | Player is in the queue and has not yet been assigned to a room |
 | **Rejection reasons** | Not in queue; already assigned to a room |
@@ -267,6 +267,36 @@ Cancel registration before the tournament starts.
 
 ---
 
+#### `CloseRegistration`
+Close the registration window and lock the confirmed player list. Triggered automatically by the system at the scheduled registration-close time; may also be issued early by an admin.
+
+| Field | Value |
+|---|---|
+| **Aggregate** | `Tournament` |
+| **Submitted by** | System (scheduled) or Admin |
+| **Preconditions** | Tournament status is `registration_open` |
+| **Rejection reasons** | Tournament not in `registration_open` state; tournament already cancelled |
+| **Concurrency** | `[idempotent]` |
+| **Produces** | `RegistrationClosed {tournament_id, confirmed_player_count}` |
+
+---
+
+#### `StartTournament`
+Transition the tournament from `registration_closed` to `in_progress` and kick off Round 1. Triggered automatically by the system at the scheduled start time; may be issued manually by an admin after registration has closed.
+
+| Field | Value |
+|---|---|
+| **Aggregate** | `Tournament` |
+| **Submitted by** | System (scheduled) or Admin |
+| **Preconditions** | Tournament status is `registration_closed`; `confirmed_players ≥ 1,000` |
+| **Rejection reasons** | Tournament not in `registration_closed` state; fewer than 1,000 confirmed players (tournament is cancelled instead); tournament already cancelled |
+| **Concurrency** | `[idempotent]` |
+| **Produces** | `TournamentStarted {tournament_id, confirmed_players, total_rounds}` → `RoundStarted {round_number: 1, ...}` |
+
+**Failure path:** If `confirmed_players < 1,000` when `StartTournament` fires, the tournament is automatically cancelled: `TournamentCancelled {reason: InsufficientPlayers}` is emitted instead of `TournamentStarted`. Registered players are notified via the `TournamentCancelled` event.
+
+---
+
 ### 1.5 Moderation/Admin Commands
 
 ---
@@ -358,7 +388,7 @@ Mark a game for admin review.
 | `PlayerReconnected` | `GameSession` | `game_id`, `player_id` | Spectator View |
 | `PlayerForfeited` | `GameSession` | `game_id`, `player_id`, `reason: Voluntary\|AFK\|ReconnectionExpired`, `remaining_active_players` | Spectator View, Tournament Orchestration, Ranking |
 | `GameCompleted` | `GameSession` | `game_id`, `room_id`, `placements: List<GamePlacement>`, `game_type: casual\|tournament`, `tournament_id?`, `match_id?` | Ranking (casual), Tournament Orchestration (tournament), Spectator View |
-| `GameVoided` | `GameSession` | `game_id`, `room_id`, `reason: AllPlayersForfeit` | Spectator View, Ranking (no Elo applied) |
+| `GameVoided` | `GameSession` (via Moderation command) | `game_id`, `room_id`, `reason: AdminVoid`, `voided_by_admin_id` | Spectator View, Ranking (Elo reverted via `EloReverted`) |
 
 ---
 
@@ -372,7 +402,11 @@ Mark a game for admin review.
 | `LobbyTimerReduced` | `Room` | `room_id`, `new_expires_at` *(triggered when room fills to 10)* | Spectator View |
 | `GameStarted` | `Room` | `room_id`, `game_id`, `player_ids` | Spectator View, Tournament Orchestration |
 | `RoomCompleted` | `Room` | `room_id`, `final_standings` | Spectator View, Tournament Orchestration |
-| `RoomCancelled` | `Room` | `room_id`, `reason: InsufficientPlayers` | Spectator View |
+| `RoomCancelled` | `Room` | `room_id`, `reason: InsufficientPlayers\|TournamentCancelled` | Spectator View, Tournament Orchestration *(tournament rooms only, for `TournamentCancelled` reason)* |
+| `PlayerJoinedQueue` | `MatchmakingQueue` | `player_id`, `joined_at`, `region`, `elo_rating` | — |
+| `PlayerLeftQueue` | `MatchmakingQueue` | `player_id` | — |
+| `QueueEntryExpired` | `MatchmakingQueue` | `player_id`, `queued_since` | — *(player must re-submit `JoinQueue` to re-enter)* |
+| `RoomAssemblyTriggered` | `MatchmakingQueue` | `assembled_player_ids: List<player_id>`, `queue_type` | Room Gameplay *(triggers `RoomCreated` + `PlayerAssignedToRoom` sequence)* |
 
 ---
 
@@ -432,6 +466,7 @@ Mark a game for admin review.
 | `EloUpdated` | `PlayerProfile` (Ranking context) | `player_id`, `old_elo`, `new_elo`, `delta`, `game_id`, `placement`, `k_factor_used`, `bonus_applied` | Spectator View (leaderboard update) |
 | `TournamentEloUpdated` | `PlayerProfile` (Ranking context) | `player_id`, `old_elo`, `new_elo`, `delta`, `tournament_id`, `tournament_placement` | Spectator View (leaderboard update) |
 | `EloReverted` | `PlayerProfile` (Ranking context) | `player_id`, `reverted_game_id`, `old_elo`, `restored_elo` | Spectator View |
+| `PlayerStatsUpdated` | `PlayerProfile` (Ranking context) | `player_id`, `games_played`, `casual_wins`, `cumulative_points`, `tournaments_won` | Spectator View (profile stats) |
 
 ---
 
@@ -501,8 +536,10 @@ GameCompleted (game_type: tournament)
 ### 3.4 Forfeit Cascade
 ```
 PlayerForfeited
-  → [if 0 active players remain] GameVoided → (no Elo changes)
   → [if 1 active player remains] GameCompleted (that player wins)
+      NOTE: reaching 0 active players through forfeits is unreachable — commands are
+      serialized, so the last-player-wins rule fires before a second "final" forfeit
+      could be processed. GameVoided is an admin-only outcome (see VoidGameResult).
   → [if 2+ active players remain] game continues
   → [if tournament room] Tournament Orchestration marks player eliminated
       → [if ≤3 active players in room] all remaining active players advance unconditionally

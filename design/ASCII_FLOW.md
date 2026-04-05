@@ -37,6 +37,7 @@ stateDiagram-v2
     lobby --> cancelled : LobbyTimerExpired\n(< 2 players present)
 
     in_progress --> completed : GameCompleted\nor MatchCompleted
+    in_progress --> cancelled : TournamentCancelled\n(admin action mid-round)
 
     cancelled --> [*]
     completed --> [*]
@@ -245,8 +246,11 @@ t=0                    t=5s (or earlier)       t=5s+resolve+45s
                   (EVT: PlayerForfeited)
                         │
                   {POL: how many active players remain?}
-                  ├── 0 ──▶ (EVT: GameVoided)  ── no Elo changes
                   ├── 1 ──▶ (EVT: GameCompleted) ── last player wins
+                  │         NOTE: the 0-player path is unreachable via forfeits —
+                  │         because commands are serialized, the last-player-wins
+                  │         rule fires before a second concurrent forfeit can land.
+                  │         GameVoided is emitted only via admin VoidGameResult.
                   └── 2+ ──▶ game continues
 ```
 
