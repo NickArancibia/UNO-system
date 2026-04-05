@@ -104,8 +104,8 @@ t=0                  t=5s                    t=45s
  │                    │
  │  [window expires]  │
  │  ──▶ ChallengeWindowClosed
- │  [if A never called Uno!]
- │  ──▶ PenaltyCardsDrawn (2 to A)
+ │  (no penalty regardless of whether A called Uno!;
+ │   penalty only applies on a successful active challenge)
  │
  │  B's 45s timer continues running through all of this
 ```
@@ -147,7 +147,7 @@ t=0                    t=5s (or earlier)       t=5s+resolve+45s
  │        ──▶ PenaltyCardsDrawn(4 to D) → window stays open for Uno!
  │                          │
  │  [window expires]        │
- │  ├── A never called Uno! ──▶ PenaltyCardsDrawn (2 to A)
+ │  ├── A never called Uno! ──▶ no penalty (challenge not submitted)
  │  └── D never acted on WD4 ──▶ PenaltyCardsDrawn (4 to D)
  │                          │
  │                          └──▶ D's 45s timer starts HERE
@@ -191,10 +191,9 @@ t=0                    t=5s (or earlier)       t=5s+resolve+45s
                         │                                                          ▼
                         │                                               card effects applied
                         │
-                        ├──▶ {POL: is it a Wild?} ───────────────▶ [CMD: DeclareColor]
-                        │                                                    │
-                        │                                          (EVT: ColorDeclared)
-                        │                                                    │
+                        ├──▶ {POL: is it a Wild?} ───────────────▶ (EVT: ColorDeclared)
+                        │                         (declared_color      │
+                        │                          from PlayCard cmd)   │
                         │                                          (EVT: TurnAdvanced)
                         │
                         ├──▶ {POL: is it a WD4?} ────────────────▶ (EVT: WildDrawFourActivated)
@@ -224,8 +223,8 @@ t=0                    t=5s (or earlier)       t=5s+resolve+45s
                        ├── Challenged before calling
                        │   ──▶ (EVT: UnoChallengeResolved: guilty)
                        │        (EVT: PenaltyCardsDrawn ×2 to A)
-                       └── Window expires unchallenged (A never called)
-                           ──▶ (EVT: PenaltyCardsDrawn ×2 to A)
+                       └── Window expires unchallenged
+                           ──▶ (EVT: ChallengeWindowClosed) — no penalty
 
                                                             │
                                           {POL: is it last card?}

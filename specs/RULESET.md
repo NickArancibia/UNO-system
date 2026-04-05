@@ -78,7 +78,7 @@ Wild and Wild Draw Four cards may be played on top of **any** card regardless of
 ### 4.4 Wild
 
 - May be played on top of any card.
-- The player who plays it declares the **active color** going forward. The Wild is then treated as if it had that color.
+- **Color declaration is atomic with the play**: the player must declare the new active color as part of the same action that places the Wild on the discard pile. There is no intermediate state between the card being played and the color being set. The Wild is then treated as if it had that color.
 - **If the starting card of the game**: the first player to take a turn declares the active color before playing.
 
 ### 4.5 Wild Draw Four (+4)
@@ -87,7 +87,8 @@ Wild and Wild Draw Four cards may be played on top of **any** card regardless of
 - The player declares the active color going forward.
 - The next player in turn order must draw four cards and their turn is skipped.
 - **Legal condition**: A Wild Draw Four may only be played legally if the player holds **no cards matching the current active color** in their hand. Wild cards in hand do **not** count as a matching color.
-- **If the starting card of the game**: shuffle it back into the draw pile (not to the bottom — reshuffle) and reveal a new top card. Repeat if necessary.
+- **Color declaration is atomic with the play**: same rule as Wild — the player must declare the new active color as part of the same action that places the WD4 on the discard pile.
+- **If the starting card of the game**: place it at the **bottom** of the draw pile and reveal the next card. Repeat until a number card is found.
 - **Cannot be stacked** in any form — see Section 5.
 - **May be challenged** — see Section 6.
 
@@ -206,7 +207,7 @@ Jump-in is an **active rule** on this platform.
   | Any player calls "Uno!" on A before A calls it | A draws 2 penalty cards and now holds 3+ cards. Uno! state is no longer active. B's Wild Draw Four options remain open for the remaining time. |
   | B challenges the Wild Draw Four — **challenge wins** (A had a matching color) | Wild Draw Four is rescinded. A draws 4 penalty cards and now holds 5+ cards; Uno! state is no longer active. The combined window closes immediately. B takes their turn normally. |
   | B challenges the Wild Draw Four — **challenge loses** (A had no matching color) | Wild Draw Four stands. B draws 6 cards (4 + 2 penalty) and B's turn is skipped. A still holds 1 card. If A has not yet called "Uno!" and time remains in the window, opponents may still call "Uno!" on A. |
-  | Window expires and A never called "Uno!" and was not challenged on it | A draws 2 penalty cards (equivalent to a successful Uno! challenge by inaction). |
+  | Window expires and A never called "Uno!" and was not challenged on it | No penalty. A retains their one-card hand. A penalty is only applied when an opponent actively challenges and that challenge succeeds. |
   | Window expires and B never challenged or drew | B must draw 4 cards (Wild Draw Four effect stands; challenge waived by inaction). |
 
   The 45-second turn timer starts only after the combined window has fully resolved.
@@ -215,7 +216,7 @@ Jump-in is an **active rule** on this platform.
 
 - If the challenged player **did not** call "Uno!" (guilty): they draw **2 penalty cards**. The challenger is not penalized.
 - If the challenged player **did** correctly call "Uno!" (innocent): the **challenger** draws **2 penalty cards**.
-- If the window expires with no challenge, the player retains their one-card hand with no penalty.
+- If the window expires with no challenge, **the player retains their one-card hand with no penalty**. A penalty is only ever applied when an opponent actively challenges and that challenge succeeds.
 
 ---
 

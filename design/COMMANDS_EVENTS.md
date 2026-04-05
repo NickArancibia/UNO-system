@@ -16,32 +16,16 @@ This document is the authoritative behavioral contract for the UnoArena domain. 
 ---
 
 #### `PlayCard`
-Play one card from the player's hand onto the discard pile.
+Play one card from the player's hand onto the discard pile. For Wild and Wild Draw Four cards, `declared_color` is a **required field** of this command — color declaration is atomic with the play.
 
 | Field | Value |
 |---|---|
 | **Aggregate** | `GameSession` |
 | **Submitted by** | Active player whose turn it is (or any player for jump-in — see `JumpIn`) |
-| **Preconditions** | Game is `in_progress`; it is the player's turn; no challenge window is open blocking their action; the card is in the player's hand; the card is a legal play |
-| **Rejection reasons** | Not the player's turn; card not in hand; illegal play (color/rank mismatch and not Wild/WD4); WD4 played while holding a matching active-color card; game not in `in_progress`; challenge window is open and this action is not permitted during it; stale state version |
+| **Preconditions** | Game is `in_progress`; it is the player's turn; no challenge window is open blocking their action; the card is in the player's hand; the card is a legal play; for Wild/WD4: `declared_color` is present and is a valid color (Red, Green, Blue, Yellow) |
+| **Rejection reasons** | Not the player's turn; card not in hand; illegal play (color/rank mismatch and not Wild/WD4); WD4 played while holding a matching active-color card; Wild or WD4 played without a `declared_color`; game not in `in_progress`; challenge window is open and this action is not permitted during it; stale state version |
 | **Concurrency** | `[stale-version]` `[idempotent]` |
-| **Produces** | `CardPlayed` → conditionally: `ColorDeclared` (Wild/WD4), `DirectionReversed` (Reverse), `PlayerSkipped` (Skip), `DrawTwoActivated` (Draw Two), `WildDrawFourActivated` (WD4), `ChallengeWindowOpened` (second-to-last card or WD4), `TurnAdvanced`, `GameCompleted` (last card) |
-
----
-
-#### `DeclareColor`
-Declare the active color after playing a Wild or Wild Draw Four.
-
-| Field | Value |
-|---|---|
-| **Aggregate** | `GameSession` |
-| **Submitted by** | The player who just played a Wild or WD4 |
-| **Preconditions** | Game is `in_progress`; the last played card was a Wild or WD4 by this player; no color has been declared yet for that card |
-| **Rejection reasons** | No pending color declaration; invalid color value; not the declaring player; stale state version |
-| **Concurrency** | `[stale-version]` `[idempotent]` |
-| **Produces** | `ColorDeclared` → `ChallengeWindowOpened` (if WD4) or `TurnAdvanced` (if Wild) |
-
----
+| **Produces** | `CardPlayed` → conditionally: `ColorDeclared` (Wild/WD4, using `declared_color` from this command), `DirectionReversed` (Reverse), `PlayerSkipped` (Skip), `DrawTwoActivated` (Draw Two), `WildDrawFourActivated` (WD4), `ChallengeWindowOpened` (second-to-last card or WD4), `TurnAdvanced`, `GameCompleted` (last card) |
 
 #### `DrawCard`
 Draw one card from the draw pile and end the turn.
@@ -471,8 +455,8 @@ PlayCard
   → [if Draw Two] DrawTwoActivated
       → [if next player stacks] DrawTwoStacked → DrawTwoActivated (accumulated)
       → [if next player draws] PenaltyCardsDrawn → TurnAdvanced
-  → [if Wild] ChallengeWindowOpened? (no) → DeclareColor → ColorDeclared → TurnAdvanced
-  → [if WD4] WildDrawFourActivated → ChallengeWindowOpened (WD4 or Combined)
+  → [if Wild] ColorDeclared (declared_color taken from PlayCard command) → TurnAdvanced
+  → [if WD4] ColorDeclared (declared_color taken from PlayCard command) → WildDrawFourActivated → ChallengeWindowOpened (WD4 or Combined)
       → [if challenged + guilty] WD4Rescinded → PenaltyCardsDrawn (4 to accused) → TurnAdvanced
       → [if challenged + innocent] PenaltyCardsDrawn (6 to challenger) → TurnAdvanced
       → [if not challenged] PenaltyCardsDrawn (4 to next player) → TurnAdvanced
@@ -480,7 +464,7 @@ PlayCard
       → [if Uno! called in time] UnoCallMade → (window stays open for remaining time)
       → [if challenged + guilty] PenaltyCardsDrawn (2 to player) → ChallengeWindowClosed
       → [if challenged + innocent] PenaltyCardsDrawn (2 to challenger) → ChallengeWindowClosed
-      → [if window expires unchallenged] PenaltyCardsDrawn (2 to player) → ChallengeWindowClosed
+      → [if window expires unchallenged] ChallengeWindowClosed (no penalty; player retains one-card hand)
   → [if last card] GameCompleted
   → [else] TurnAdvanced
 ```

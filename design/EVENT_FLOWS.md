@@ -136,19 +136,19 @@ Player A now holds 2 cards.
 
   [TIMER] 5-second Uno! window expires with no challenge
   → ChallengeWindowClosed {reason: Expired, state_version: M+3}
-  (B's 45s turn timer continues uninterrupted — time elapsed during the Uno! window
-   counts against B's turn)
+  (A retains their one-card hand with no penalty — a penalty is only applied on a
+   successful active challenge. B's 45s turn timer continues uninterrupted — time
+   elapsed during the Uno! window counts against B's turn)
 ```
 
 ### Phase D — Game Completion
 
 ```
 Player A's turn again. A holds 1 card.
-  Player A submits: PlayCard {card: Wild, state_version: P}
-  [SYNC] Wild is legal on any card ✓; A will hold 0 cards
-
-  Player A submits: DeclareColor {color: Green, state_version: P}
-  [SYNC] color declaration accepted
+  Player A submits: PlayCard {card: Wild, declared_color: Green, state_version: P}
+  [SYNC] Wild is legal on any card ✓; declared_color: Green is valid ✓; A will hold 0 cards
+  → CardPlayed {game_id: G1, player_id: A, card: Wild, new_discard_top: Wild,
+                active_color: Green, state_version: P+1}
   → ColorDeclared {player_id: A, declared_color: Green, state_version: P+1}
 
   [SYNC] A's hand is now empty → game end condition met

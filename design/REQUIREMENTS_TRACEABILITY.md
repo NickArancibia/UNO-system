@@ -221,3 +221,6 @@ Checks that no contradictory rule text exists between specs and design artifacts
 | Minimum 1,000 confirmed players to start tournament | TOURNAMENT_RULES.md §2 | DOMAIN_MODEL.md §1.5 invariant | ✓ Consistent |
 | Phase-start thresholds vary by round number | TOURNAMENT_RULES.md §5 | DOMAIN_MODEL.md §1.4, EVENT_FLOWS.md Flow 2 | ✓ Consistent |
 | Waiting state defined by timer not started (not purely player count) | CONSTRAINTS.md §2.2 | GLOSSARY.md §4 (corrected) | ✓ Consistent |
+| Uno! unchallenged window expiry: no penalty | RULESET.md §8 | COMMANDS_EVENTS.md §3.1, EVENT_FLOWS.md Flow 1, ASCII_FLOW.md §3.2, §3.4 | ✓ Consistent (fixed) |
+| Wild/WD4 color declaration is atomic with PlayCard | RULESET.md §4.4, §4.5 | COMMANDS_EVENTS.md `PlayCard`, EVENT_FLOWS.md Flow 1 Phase D, ASCII_FLOW.md §4 | ✓ Consistent (fixed) |
+| All non-number starting cards go to the bottom of the draw pile | RULESET.md §2, §4.5 | DOMAIN_MODEL.md §1.1 (GameSession init) | ✓ Consistent (fixed) |
