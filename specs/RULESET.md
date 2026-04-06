@@ -32,7 +32,7 @@ Wild and Wild Draw Four cards have no inherent color.
 4. Reveal the top card of the draw pile to start the **discard pile**:
    - If the revealed card is a number card (0–9), it becomes the starting card.
    - If it is any other card type (Skip, Reverse, Draw Two, Wild, Wild Draw Four), place it at the **bottom** of the draw pile and reveal the next card. Repeat until a number card is found.
-5. Play begins with the player to the **left of the dealer** and proceeds **clockwise**.
+5. The **first player is determined randomly**. Play then proceeds **clockwise**.
 
 ---
 
@@ -60,26 +60,22 @@ Wild and Wild Draw Four cards may be played on top of **any** card regardless of
 
 - Switches the direction of play: clockwise becomes counterclockwise and vice versa.
 - May be played on a card of matching color or on another Reverse card.
-- **If the starting card of the game**: play begins counterclockwise instead of clockwise.
 
 ### 4.2 Skip
 
 - The next player in turn order loses their entire turn.
 - May be played on a card of matching color or on another Skip card.
-- **If the starting card of the game**: the first player's turn is skipped; the second player goes first.
 
 ### 4.3 Draw Two (+2)
 
 - The next player in turn order must draw two cards and their turn is skipped.
 - May be played on a card of matching color or on another Draw Two card.
-- **If the starting card of the game**: the first player draws two cards and their turn is skipped.
 - **Stacking applies** — see Section 5.
 
 ### 4.4 Wild
 
 - May be played on top of any card.
 - **Color declaration is atomic with the play**: the player must declare the new active color as part of the same action that places the Wild on the discard pile. There is no intermediate state between the card being played and the color being set. The Wild is then treated as if it had that color.
-- **If the starting card of the game**: the first player to take a turn declares the active color before playing.
 
 ### 4.5 Wild Draw Four (+4)
 
@@ -88,7 +84,6 @@ Wild and Wild Draw Four cards may be played on top of **any** card regardless of
 - The next player in turn order must draw four cards and their turn is skipped.
 - **Legal condition**: A Wild Draw Four may only be played legally if the player holds **no cards matching the current active color** in their hand. Wild cards in hand do **not** count as a matching color.
 - **Color declaration is atomic with the play**: same rule as Wild — the player must declare the new active color as part of the same action that places the WD4 on the discard pile.
-- **If the starting card of the game**: place it at the **bottom** of the draw pile and reveal the next card. Repeat until a number card is found.
 - **Cannot be stacked** in any form — see Section 5.
 - **May be challenged** — see Section 6.
 
