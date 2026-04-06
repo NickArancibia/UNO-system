@@ -402,6 +402,7 @@ Mark a game for admin review.
 | `GameStarted` | `Room` | `room_id`, `game_id`, `player_ids` | Spectator View, Tournament Orchestration |
 | `RoomCompleted` | `Room` | `room_id`, `final_standings` | Spectator View, Tournament Orchestration |
 | `RoomCancelled` | `Room` | `room_id`, `reason: InsufficientPlayers\|TournamentCancelled` | Spectator View, Tournament Orchestration *(tournament rooms only, for `TournamentCancelled` reason)* |
+| `SpectatorJoined` | `Room` | `room_id`, `player_id` | Spectator View *(updates spectator count on `SpectatorRoomList` read model)* |
 | `PlayerJoinedQueue` | `MatchmakingQueue` | `player_id`, `joined_at`, `region`, `elo_rating` | — |
 | `PlayerLeftQueue` | `MatchmakingQueue` | `player_id` | — |
 | `QueueEntryExpired` | `MatchmakingQueue` | `player_id`, `queued_since` | — *(player must re-submit `JoinQueue` to re-enter)* |
