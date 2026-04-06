@@ -78,7 +78,7 @@ The matchmaking system assembles rooms from the Quick Play queue. Rooms are not 
 - When a player forfeits, **their hand is discarded** and removed from the game. Their cards are not scored.
 - The game continues normally with the remaining players.
 - If a forfeit leaves only **1 active player** in the room, that player is declared the **winner of the current game** immediately. No further rounds are started.
-- If a forfeit leaves **0 active players**, the game is **voided**: no scores are recorded and **no Elo changes are applied** to any player.
+- A forfeit cannot leave **0 active players** through normal gameplay: because all game commands are serialized by state version, the last-player-wins rule above fires before any subsequent forfeit can be processed. There is no 0-player game state reachable via forfeits. A game may only be voided by an admin action (`VoidGameResult`), in which case no scores are recorded and no Elo changes are applied to any player.
 
 ### 2.7 Room Lifecycle States
 
@@ -88,6 +88,7 @@ The matchmaking system assembles rooms from the Quick Play queue. Rooms are not 
 | `lobby` | 5+ players present, countdown active |
 | `in_progress` | Game running, rounds being played |
 | `completed` | Game finished, winner determined |
+| `cancelled` | Room terminated before or during play: either the lobby timer expired with fewer than 2 players, or the tournament the room belongs to was cancelled by an admin. Final standings are not produced and no Elo is applied. |
 
 ---
 
@@ -156,7 +157,7 @@ UnoArena uses a **placement-based multi-player Elo extension** for casual games.
 4. **K-factor**: 32 for players with fewer than 20 completed casual games; 16 for 20–99 games; 12 for 100+ games.
 5. **Points bonus**: since points are 0 or negative, "above the room average" means a smaller absolute deficit. If a player's absolute card-value deficit is at most **80% of the room average absolute deficit** (i.e., they performed at least 20% better than average), `ΔR_i` is increased by +3. The winner (0 points) always qualifies if the room average is negative.
 
-Forfeiting players are assigned rank N (last place) regardless of when they forfeited. See also [ASSUMPTIONS.md — Section 3](./ASSUMPTIONS.md) for full derivation rationale.
+Forfeiting players are assigned rank N (last place) regardless of when they forfeited. See also [ASSUMPTIONS.md — Section 4](./ASSUMPTIONS.md) for full derivation rationale.
 
 ### 5.3 Forfeit Impact on Elo
 

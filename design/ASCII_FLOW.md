@@ -250,7 +250,7 @@ t=0                    t=5s (or earlier)       t=5s+resolve+45s
                   │         NOTE: the 0-player path is unreachable via forfeits —
                   │         because commands are serialized, the last-player-wins
                   │         rule fires before a second concurrent forfeit can land.
-                  │         GameVoided is emitted only via admin VoidGameResult.
+                  │         GameResultVoided is emitted by Moderation only (admin VoidGameResult).
                   └── 2+ ──▶ game continues
 ```
 
@@ -343,7 +343,7 @@ stateDiagram-v2
     forfeited --> spectating : PlayerForfeited\n(may join as spectator)
 
     spectating --> [*] : GameCompleted
-    forfeited --> [*] : GameCompleted\nor GameVoided
+    forfeited --> [*] : GameCompleted\nor GameResultVoided
 
     note right of forfeited
         Casual: removed from game only
@@ -369,7 +369,8 @@ stateDiagram-v2
       ▼
 [CMD: Register] ──▶ (EVT: PlayerRegistered) ──▶ (EVT: SessionCreated)
                            │
-                    ~~▶ [RM: PlayerProfile created, Elo = 1000]
+                    ~~▶ [RM: PlayerProfile created]
+                    ~~▶ [AGG: EloRecord created in Ranking context, casual_elo = 1000, tournament_elo = 1000]
 
 [CMD: Login] ──▶ {POL: existing session?}
                   ├── YES ──▶ (EVT: SessionInvalidated [old])

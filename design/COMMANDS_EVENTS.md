@@ -388,7 +388,6 @@ Mark a game for admin review.
 | `PlayerReconnected` | `GameSession` | `game_id`, `player_id` | Spectator View |
 | `PlayerForfeited` | `GameSession` | `game_id`, `player_id`, `reason: Voluntary\|AFK\|ReconnectionExpired`, `remaining_active_players` | Spectator View, Tournament Orchestration, Ranking |
 | `GameCompleted` | `GameSession` | `game_id`, `room_id`, `placements: List<GamePlacement>`, `game_type: casual\|tournament`, `tournament_id?`, `match_id?` | Ranking (casual), Tournament Orchestration (tournament), Spectator View |
-| `GameVoided` | `GameSession` (via Moderation command) | `game_id`, `room_id`, `reason: AdminVoid`, `voided_by_admin_id` | Spectator View, Ranking (Elo reverted via `EloReverted`) |
 
 ---
 
@@ -463,10 +462,10 @@ Mark a game for admin review.
 
 | Event | Producing aggregate | Key payload fields | Downstream consumers |
 |---|---|---|---|
-| `EloUpdated` | `PlayerProfile` (Ranking context) | `player_id`, `old_elo`, `new_elo`, `delta`, `game_id`, `placement`, `k_factor_used`, `bonus_applied` | Spectator View (leaderboard update) |
-| `TournamentEloUpdated` | `PlayerProfile` (Ranking context) | `player_id`, `old_elo`, `new_elo`, `delta`, `tournament_id`, `tournament_placement` | Spectator View (leaderboard update) |
-| `EloReverted` | `PlayerProfile` (Ranking context) | `player_id`, `reverted_game_id`, `old_elo`, `restored_elo` | Spectator View |
-| `PlayerStatsUpdated` | `PlayerProfile` (Ranking context) | `player_id`, `games_played`, `casual_wins`, `cumulative_points`, `tournaments_won` | Spectator View (profile stats) |
+| `EloUpdated` | `EloRecord` (Ranking context) | `player_id`, `old_elo`, `new_elo`, `delta`, `game_id`, `placement`, `k_factor_used`, `bonus_applied` | Spectator View (leaderboard update) |
+| `TournamentEloUpdated` | `EloRecord` (Ranking context) | `player_id`, `old_elo`, `new_elo`, `delta`, `tournament_id`, `tournament_placement` | Spectator View (leaderboard update) |
+| `EloReverted` | `EloRecord` (Ranking context) | `player_id`, `reverted_game_id`, `old_elo`, `restored_elo` | Spectator View |
+| `PlayerStatsUpdated` | `PlayerProfile` (Identity/Session context) | `player_id`, `games_played`, `casual_wins`, `cumulative_points`, `tournaments_won` | Spectator View (profile stats) |
 
 ---
 
@@ -539,7 +538,7 @@ PlayerForfeited
   → [if 1 active player remains] GameCompleted (that player wins)
       NOTE: reaching 0 active players through forfeits is unreachable — commands are
       serialized, so the last-player-wins rule fires before a second "final" forfeit
-      could be processed. GameVoided is an admin-only outcome (see VoidGameResult).
+      could be processed. GameResultVoided is emitted by Moderation only (admin-only outcome; see VoidGameResult).
   → [if 2+ active players remain] game continues
   → [if tournament room] Tournament Orchestration marks player eliminated
       → [if ≤3 active players in room] all remaining active players advance unconditionally

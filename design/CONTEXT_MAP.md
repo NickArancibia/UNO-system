@@ -106,7 +106,7 @@ This document defines the six bounded contexts of UnoArena, their responsibiliti
 **Role:** Downstream from Room Gameplay (casual Elo) and Tournament Orchestration (tournament Elo).
 
 **Responsibilities:**
-- Owns the `EloRecord` and `Leaderboard` read models.
+- Owns the `EloRecord` aggregate (one per player; authoritative source for all Elo ratings) and the `Leaderboard` read model.
 - Consumes `GameCompleted` events from Room Gameplay to update casual Elo.
 - Consumes `TournamentCompleted` events from Tournament Orchestration to update tournament-placement Elo.
 - Applies the placement-based multi-player Elo formula (see CONSTRAINTS.md Section 5.2 and TOURNAMENT_RULES.md Section 8).
@@ -140,7 +140,7 @@ This document defines the six bounded contexts of UnoArena, their responsibiliti
 
 **Does NOT own:**
 - Game state or room lifecycle.
-- Elo ratings (owned by Ranking, linked to PlayerProfile by player ID).
+- Elo ratings (owned by the `EloRecord` aggregate in the Ranking context, linked to `PlayerProfile` by `player_id`).
 
 **Published language (consumed by all other contexts):**
 - `PlayerRegistered`, `SessionCreated`, `SessionInvalidated`, `PlayerSuspended`
@@ -173,7 +173,7 @@ This document defines the six bounded contexts of UnoArena, their responsibiliti
 | Scores and placements | No | Public information |
 
 **Events consumed from Room Gameplay:**
-`CardPlayed`, `CardDrawn`, `TurnAdvanced`, `DirectionReversed`, `PlayerSkipped`, `DrawTwoStacked`, `PenaltyApplied`, `UnoCallMade`, `UnoChallengeResolved`, `WildDrawFourPlayed`, `WildDrawFourChallengeResolved`, `PlayerDisconnected`, `PlayerReconnected`, `PlayerForfeited`, `GameStarted`, `GameCompleted`
+`CardPlayed`, `CardDrawn`, `TurnAdvanced`, `DirectionReversed`, `PlayerSkipped`, `DrawTwoStacked`, `PenaltyApplied`, `UnoCallMade`, `UnoChallengeResolved`, `WildDrawFourActivated`, `WildDrawFourChallengeResolved`, `PlayerDisconnected`, `PlayerReconnected`, `PlayerForfeited`, `GameStarted`, `GameCompleted`
 
 **Events consumed from Tournament Orchestration:**
 `MatchStarted`, `GameInMatchStarted`, `MatchCompleted`, `MatchTimeoutReached`, `AdvancementResolved`

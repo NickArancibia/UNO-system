@@ -132,7 +132,7 @@ The post-game public log records all of the following:
 - Round-end events with scores; game-end events with final standings.
 - Match-end events (tournament) with game win counts and advancement decisions.
 
-**Note on Wild Draw Four hand reveal**: the accused player's hand, which is revealed exclusively to the challenger during an active game (see [CONSTRAINTS.md — Section 4.2](./CONSTRAINTS.md)), **becomes part of the public post-game log**. This is intentional for dispute resolution, replay integrity, and audit purposes.
+**Note on Wild Draw Four hand reveal**: the accused player's hand is **verified server-side only** during the game — it is never revealed to any player or spectator, including the challenger (see [CONSTRAINTS.md — Section 4.2](./CONSTRAINTS.md)). The full hand composition **becomes part of the public post-game log** after the game completes. This is intentional for dispute resolution, replay integrity, and audit purposes.
 
 ---
 

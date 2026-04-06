@@ -335,7 +335,7 @@ This flow covers one full elimination round: qualifier accumulation, progressive
                    {player_id: E, rank: 5, game_score: -55,  cards_remaining: 5, forfeited: true}
                  ]}
 
-[SYNC] Ranking reads current Elo for all players: A=1200, B=1050, C=1000, D=980, E=900
+[SYNC] Ranking reads current Elo for all players from their EloRecords: A=1200, B=1050, C=1000, D=980, E=900
 
 [SYNC] Forfeit check: E forfeited → assigned rank 5 (last) regardless of score
 

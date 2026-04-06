@@ -150,23 +150,19 @@ The top-level aggregate governing the full tournament lifecycle, from registrati
 ### 1.6 PlayerProfile
 **Owned by:** Identity/Session context
 
-The persistent player record. Owns identity, region, Elo ratings, and statistics.
+The persistent player record. Owns identity, region, account status, and public statistics. Elo ratings are **not** stored here — they are owned by the `EloRecord` aggregate in the Ranking context, keyed by `player_id`.
 
 **State:**
 - `player_id` — unique identifier
 - `username` — unique, immutable after registration
 - `region` — home region; self-selected at registration; immutable after 30 days without admin review
-- `casual_elo` — `EloRating` value object (starts at 1,000)
-- `tournament_elo` — `EloRating` value object (starts at 1,000)
 - `stats` — `PlayerStats` value object: games played, win rate, cumulative points, tournaments won
 - `status` — `active` | `suspended` | `banned`
 
 **Key invariants:**
 1. `username` is globally unique.
-2. `casual_elo` is updated only after completed casual games; never after voided games or tournament games.
-3. `tournament_elo` is updated only once after a full tournament concludes; never mid-tournament.
-4. A banned player may not log in or participate in any room or tournament.
-5. A suspended player's active session is invalidated; participation resumes after the cooldown expires.
+2. A banned player may not log in or participate in any room or tournament.
+3. A suspended player's active session is invalidated; participation resumes after the cooldown expires.
 
 ---
 
@@ -211,6 +207,26 @@ The consistency boundary for casual Quick Play queue membership. Owns all state 
 
 ---
 
+### 1.9 EloRecord
+**Owned by:** Ranking context
+
+The authoritative owner of a player's Elo ratings. One `EloRecord` exists per player, created when `PlayerRegistered` is consumed from Identity/Session. This aggregate is entirely within the Ranking context — Identity/Session never writes to it.
+
+**State:**
+- `player_id` — shared identifier; the link back to `PlayerProfile`
+- `casual_elo` — `EloRating` value object (starts at 1,000); updated after each completed casual game
+- `tournament_elo` — `EloRating` value object (starts at 1,000); updated once after a full tournament concludes
+- `games_played` — count of completed casual games (drives K-factor tier)
+
+**Key invariants:**
+1. `casual_elo` is updated only on `GameCompleted` events with `game_type: casual` and where the game has not been voided; never for tournament games.
+2. `tournament_elo` is updated only on `TournamentCompleted`; never mid-tournament.
+3. On `GameResultVoided`, the Elo delta from that game is reversed atomically; the reversal is idempotent (keyed by `game_id`).
+4. On `TournamentCancelled`, all Elo deltas accrued within that tournament are reversed; the reversal is idempotent (keyed by `tournament_id`).
+5. Forfeiting players are assigned rank N (last place) before delta computation; no special case needed.
+
+---
+
 ## 2. Entities
 
 Entities have identity but live within an aggregate's consistency boundary.
@@ -237,7 +253,7 @@ Value objects have no identity; they are defined entirely by their attributes an
 | `MatchStanding` | `player_id`, `match_wins`, `cumulative_card_point_burden`, `cumulative_cards_remaining`, `forfeited: bool`, `forfeit_timestamp` | `Match` | Complete data needed to determine room placement and advancement; fully reproducible from completed game results |
 | `GamePlacement` | `player_id`, `rank`, `game_score`, `cards_remaining` | `MatchGame`, `GameSession` | Final result for one player in one game |
 | `Placement` | `player_id`, `rank`, `scope: game\|room\|tournament` | `GameSession`, `Match`, `Tournament` | Scoped ranking result; scope disambiguates usage |
-| `EloRating` | `value`, `games_played`, `k_factor_tier: provisional\|established\|veteran` | `PlayerProfile` | K-factor tier derived from `games_played`: <20 → 32, 20–99 → 16, 100+ → 12 (casual); always 40 (tournament) |
+| `EloRating` | `value`, `k_factor_tier: provisional\|established\|veteran` | `EloRecord` | K-factor tier derived from `EloRecord.games_played`: <20 → 32, 20–99 → 16, 100+ → 12 (casual); always 40 (tournament) |
 | `PlayerStats` | `games_played`, `casual_wins`, `cumulative_points`, `tournaments_won` | `PlayerProfile` | Aggregate statistics for the player's public profile |
 | `StateVersion` | `value: int` | `GameSession` | Monotonically increasing; compared on every command to enforce optimistic concurrency |
 | `IdempotencyKey` | `uuid` | All commands | Client-generated UUID; server stores result keyed by this value for at-least-once safety |
@@ -303,6 +319,7 @@ Spectator View is a projection context — it owns no aggregates. Its DDD artifa
 | `Match` | Strong consistency for Bo3 standing and match end detection | Reacts to `GameCompleted`; emits `MatchCompleted` |
 | `TournamentRound` | Eventual consistency — rooms complete at different times; advancement accumulates | Reacts to `MatchCompleted`; emits `RoundCompleted` when all rooms resolved |
 | `Tournament` | Eventual consistency — rounds complete sequentially | Reacts to `RoundCompleted`; emits `TournamentCompleted` |
-| `PlayerProfile` | Strong consistency for Elo updates (one update per completed game or tournament) | Reacts to `GameCompleted` (casual Elo) and `TournamentCompleted` (tournament Elo) |
+| `PlayerProfile` | Strong consistency for identity and account status | Reacts to admin commands (`SuspendPlayer`, `BanPlayer`); emits `PlayerRegistered` |
+| `EloRecord` | Strong consistency for Elo updates (one update per completed game or tournament) | Reacts to `GameCompleted` (casual Elo) and `TournamentCompleted` (tournament Elo); compensates on `GameResultVoided` and `TournamentCancelled` |
 | `PlayerSession` | Strong consistency for single-session invariant | Emits `SessionInvalidated`; reacts to login commands |
 | `MatchmakingQueue` | Strong consistency for queue membership (one entry per player) | Emits `PlayerJoinedQueue`, `QueueEntryExpired`, `RoomAssemblyTriggered`; no direct calls to other aggregates |

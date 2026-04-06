@@ -220,11 +220,11 @@ Step 4: Tournament Orchestration receives PlayerBanned [Tournament Orchestration
 | Reconnection window is created at most once per disconnection event | `ReconnectionWindowStarted` deduped by `player_id` + `invalidated_at`; duplicate `SessionInvalidated` delivery does not open a second window |
 | Reconnection is only valid within the 60-second window | `expires_at` checked server-side on `ReconnectToGame`; no client-side timer is trusted |
 
-### 4.6 PlayerProfile
+### 4.6 EloRecord
 
 | Invariant | Prevention mechanism |
 |---|---|
-| Casual Elo updated only for completed, non-voided casual games | Consumer checks `game_type: casual` and `voided: false` before applying `EloUpdated` |
+| Casual Elo updated only for completed, non-voided casual games | Consumer checks `game_type: casual` and `voided: false` before applying `EloUpdated`; dedup by `game_id` |
 | Tournament Elo updated only once per tournament, after full completion | Consumer checks `TournamentCompleted` (not mid-round events); dedup by `tournament_id` |
 | Forfeiting player assigned last place for Elo | Forfeit flag in `GameCompleted` payload; Ranking assigns rank N before computing deltas |
 
@@ -252,7 +252,7 @@ Read models in Spectator View are eventually consistent. The following procedure
 
 **Lag recovery:** Ranking events are replayed in delivery order. Idempotent: if an `EloUpdated` event is applied twice, the second application detects the `game_id` was already processed and is a no-op.
 
-**Reconciliation against source of truth:** If the leaderboard diverges from `PlayerProfile.casual_elo` (detectable by a periodic scan), the leaderboard is rebuilt from the current Elo values in all `PlayerProfile` records. This is a point-in-time snapshot rebuild, not a full event replay.
+**Reconciliation against source of truth:** If the leaderboard diverges from the Ranking context's own data (detectable by a periodic scan), the leaderboard is rebuilt from the current Elo values in all `EloRecord` aggregates. This is a point-in-time snapshot rebuild, not a full event replay.
 
 ---
 

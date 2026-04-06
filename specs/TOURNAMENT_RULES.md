@@ -144,7 +144,7 @@ Tournament disconnection follows the same rules as casual games ([CONSTRAINTS.md
 - **Profile statistics** (tracked on each player's profile; not direct formula inputs): number of rounds reached, cumulative match win rate, cumulative game win rate across the tournament.
 - **Formula**: placement-based multi-player Elo — actual score `S_i = (T − p_i) / (T − 1)` where T = total participants and p_i = final placement; expected score `E_i` computed from pairwise Elo comparisons against all other participants; `ΔR_i = K × (S_i − E_i)` with **K = 40** for tournament play.
 - Forfeits (voluntary, AFK, or reconnection-window expiry) count as the **worst placement within the player's elimination round** for tournament-placement Elo purposes.
-- See [ASSUMPTIONS.md — Section 3](./ASSUMPTIONS.md) for full derivation rationale.
+- See [ASSUMPTIONS.md — Section 4](./ASSUMPTIONS.md) for full derivation rationale.
 
 ---
 
