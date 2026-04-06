@@ -141,15 +141,17 @@ Step 4: Spectator View updates LeaderboardView    [Spectator View]
 Step 1: PlayerSession emits SessionInvalidated    [Identity/Session]
 Step 2: Room Gameplay receives SessionInvalidated [Room Gameplay]
         → emits PlayerDisconnected
+Step 3: PlayerSession creates ReconnectionWindow  [Identity/Session]
         → emits ReconnectionWindowStarted (60s)
-Step 3a: Player reconnects within 60s
+Step 4a: Player reconnects within 60s
          → PlayerReconnected; turns resume
-Step 3b: Window expires
-         → ReconnectionWindowExpired → PlayerForfeited
+Step 4b: Window expires
+         → PlayerSession emits ReconnectionWindowExpired  [Identity/Session]
+         → Room Gameplay receives ReconnectionWindowExpired → PlayerForfeited
 ```
 
 **Failure handling:**
-- If Step 2 fails (Room Gameplay misses `SessionInvalidated`): the player's connection is physically gone; Room Gameplay detects this via heartbeat timeout and emits `PlayerDisconnected` independently. The two paths converge on the same outcome.
+- If Step 2 fails (Room Gameplay misses `SessionInvalidated`): the player's connection is physically gone; Room Gameplay detects this via heartbeat timeout and emits `PlayerDisconnected` independently. Identity/Session detects the same via heartbeat and emits `ReconnectionWindowStarted`. The two paths converge on the same outcome.
 - If `ReconnectionWindowExpired` is delivered twice: second delivery is idempotent — forfeit already issued, second attempt is a no-op.
 
 ---
