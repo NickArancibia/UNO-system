@@ -29,7 +29,7 @@ stateDiagram-v2
     [*] --> waiting : RoomCreated
 
     waiting --> lobby : PlayerAssignedToRoom\n(5th player arrives)
-    waiting --> cancelled : LobbyTimerExpired\n(< 2 players)
+    waiting --> cancelled : TournamentCancelled\n(admin cancellation before lobby)
 
     lobby --> lobby : PlayerAssignedToRoom\n(6th–10th player)
     lobby --> lobby : LobbyTimerReduced\n(room fills to 10)

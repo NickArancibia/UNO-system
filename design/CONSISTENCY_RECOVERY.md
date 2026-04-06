@@ -248,7 +248,7 @@ Read models in Spectator View are eventually consistent. The following procedure
 
 ### 5.2 LeaderboardView (Elo rankings)
 
-**Normal operation:** Updated on each `EloUpdated` or `TournamentEloUpdated` event.
+**Normal operation:** Updated on each `EloUpdated` event (emitted by Ranking for both casual and tournament Elo updates; distinguished by `game_type: casual | tournament` in the payload).
 
 **Lag recovery:** Ranking events are replayed in delivery order. Idempotent: if an `EloUpdated` event is applied twice, the second application detects the `game_id` was already processed and is a no-op.
 
@@ -268,7 +268,7 @@ Read models in Spectator View are eventually consistent. The following procedure
 
 ### 5.4 PublicGameLog (post-game audit record)
 
-**Sealed on completion:** `PublicGameLog` is built by processing all events for a `game_id` from `GameInitialized` through `GameCompleted`. It is immutable after sealing.
+**Sealed on completion:** `PublicGameLog` is built by processing all events for a `game_id` from `GameStarted` through `GameCompleted`. It is immutable after sealing.
 
 **If GameCompleted is delivered twice:** Idempotent — log sealed flag prevents second processing.
 
@@ -281,8 +281,8 @@ Read models in Spectator View are eventually consistent. The following procedure
 | Context | Dedup cache scope | Suggested TTL |
 |---|---|---|
 | GameSession command idempotency | Per `game_id` + `idempotency_key` | Duration of game + 24h buffer |
-| Ranking `EloUpdated` dedup | Per `game_id` | Permanent (game results never expire) |
-| Ranking `TournamentEloUpdated` dedup | Per `tournament_id` | Permanent |
+| Ranking `EloUpdated` dedup (casual, `game_type: casual`) | Per `game_id` | Permanent (game results never expire) |
+| Ranking `EloUpdated` dedup (tournament, `game_type: tournament`) | Per `tournament_id` | Permanent |
 | Ranking `EloReverted` dedup | Per `game_id` + `tournament_id` | Permanent |
 | TournamentRound `AdvancementResolved` dedup | Per `tournament_id` + `round_number` + `room_id` | Duration of tournament + 7 days |
 | Session invalidation dedup | Per `player_id` + `invalidated_at` | 24h (reconnection window is 60s) |

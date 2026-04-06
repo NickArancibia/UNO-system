@@ -46,6 +46,8 @@ This document maps every mandatory deliverable from the assignment specification
 | `Tournament` aggregate with invariants | [DOMAIN_MODEL.md](./DOMAIN_MODEL.md) | Section 1.5 |
 | `PlayerProfile` aggregate with invariants | [DOMAIN_MODEL.md](./DOMAIN_MODEL.md) | Section 1.6 |
 | `PlayerSession` aggregate with invariants | [DOMAIN_MODEL.md](./DOMAIN_MODEL.md) | Section 1.7 |
+| `MatchmakingQueue` aggregate with invariants | [DOMAIN_MODEL.md](./DOMAIN_MODEL.md) | Section 1.8 |
+| `EloRecord` aggregate with invariants | [DOMAIN_MODEL.md](./DOMAIN_MODEL.md) | Section 1.9 |
 | Entities inventory | [DOMAIN_MODEL.md](./DOMAIN_MODEL.md) | Section 2 |
 | Value objects inventory | [DOMAIN_MODEL.md](./DOMAIN_MODEL.md) | Section 3 |
 | Aggregate interaction map (event-driven, no direct calls) | [DOMAIN_MODEL.md](./DOMAIN_MODEL.md) | Section 4 |

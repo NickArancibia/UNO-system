@@ -173,7 +173,7 @@ This document defines the six bounded contexts of UnoArena, their responsibiliti
 | Scores and placements | No | Public information |
 
 **Events consumed from Room Gameplay:**
-`CardPlayed`, `CardDrawn`, `TurnAdvanced`, `DirectionReversed`, `PlayerSkipped`, `DrawTwoStacked`, `PenaltyApplied`, `UnoCallMade`, `UnoChallengeResolved`, `WildDrawFourActivated`, `WildDrawFourChallengeResolved`, `PlayerDisconnected`, `PlayerReconnected`, `PlayerForfeited`, `GameStarted`, `GameCompleted`
+`RoomCreated`, `RoomStatusChanged`, `PlayerAssignedToRoom`, `GameStarted`, `GameCompleted`, `CardPlayed`, `CardDrawn`, `TurnAdvanced`, `DirectionReversed`, `PlayerSkipped`, `DrawTwoStacked`, `WildDrawFourActivated`, `PenaltyCardsDrawn`, `UnoCallMade`, `UnoChallengeResolved`, `WildDrawFourChallengeResolved`, `PlayerDisconnected`, `PlayerReconnected`, `PlayerForfeited`
 
 **Events consumed from Tournament Orchestration:**
 `MatchStarted`, `GameInMatchStarted`, `MatchCompleted`, `MatchTimeoutReached`, `AdvancementResolved`
@@ -250,25 +250,39 @@ Moderation/Admin ◀────────────────────
 
 ## 4. Cross-Context Event Contracts
 
-These are the events that cross context boundaries, their producers, and their consumers.
+The table below highlights the most notable events that cross context boundaries, with emphasis on privacy-sensitive payloads and multi-consumer flows. It is not exhaustive — the authoritative per-event detail (payload fields, all downstream consumers, idempotency behavior) is in [COMMANDS_EVENTS.md](./COMMANDS_EVENTS.md).
 
 | Event | Producer | Consumers | Privacy-sensitive? |
 |---|---|---|---|
+| `RoomCreated` | Room Gameplay | Spectator View | No |
+| `RoomStatusChanged` | Room Gameplay | Spectator View | No |
+| `PlayerAssignedToRoom` | Room Gameplay | Spectator View | No |
 | `GameStarted` | Room Gameplay | Spectator View, Tournament Orchestration | No |
+| `GameCompleted` | Room Gameplay | Ranking, Spectator View, Tournament Orchestration | No (final placements and scores are public) |
 | `CardPlayed` | Room Gameplay | Spectator View | No (card identity is public once played) |
 | `CardDrawn` | Room Gameplay | Spectator View | **Yes** — drawn card identity withheld from spectators |
-| `PenaltyApplied` | Room Gameplay | Spectator View | **Yes** — penalty card identities withheld |
+| `TurnAdvanced` | Room Gameplay | Spectator View | No |
+| `DirectionReversed` | Room Gameplay | Spectator View | No |
+| `PlayerSkipped` | Room Gameplay | Spectator View | No |
+| `DrawTwoStacked` | Room Gameplay | Spectator View | No |
+| `WildDrawFourActivated` | Room Gameplay | Spectator View | No |
+| `PenaltyCardsDrawn` | Room Gameplay | Spectator View | **Yes** — penalty card identities withheld |
 | `UnoCallMade` | Room Gameplay | Spectator View | No |
 | `UnoChallengeResolved` | Room Gameplay | Spectator View | No |
 | `WildDrawFourChallengeResolved` | Room Gameplay | Spectator View | **Yes** — hand composition withheld until post-game log |
 | `PlayerDisconnected` | Room Gameplay | Spectator View, Tournament Orchestration | No |
+| `PlayerReconnected` | Room Gameplay | Spectator View | No |
 | `PlayerForfeited` | Room Gameplay | Spectator View, Tournament Orchestration, Ranking | No |
-| `GameCompleted` | Room Gameplay | Ranking, Spectator View, Tournament Orchestration | No (final placements and scores are public) |
 | `SessionInvalidated` | Identity/Session | Room Gameplay | No |
 | `PlayerSuspended` | Identity/Session | Room Gameplay, Tournament Orchestration | No |
+| `RoundStarted` | Tournament Orchestration | Spectator View | No |
+| `TournamentRoomAssigned` | Tournament Orchestration | Spectator View | No |
+| `MatchStarted` | Tournament Orchestration | Spectator View | No |
+| `GameInMatchStarted` | Tournament Orchestration | Spectator View | No |
 | `MatchCompleted` | Tournament Orchestration | Spectator View, Ranking (indirectly via TournamentCompleted) | No |
 | `AdvancementResolved` | Tournament Orchestration | Spectator View | No |
 | `TournamentCompleted` | Tournament Orchestration | Ranking | No |
+| `EloUpdated` | Ranking | Spectator View | No |
 | `TournamentCancelled` | Moderation/Admin | Tournament Orchestration, Ranking | No |
 | `GameResultVoided` | Moderation/Admin | Ranking | No |
 | `PlayerBanned` | Identity/Session (triggered by Moderation command) | Room Gameplay, Tournament Orchestration, Moderation/Admin (audit) | No |

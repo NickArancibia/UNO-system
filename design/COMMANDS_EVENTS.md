@@ -363,7 +363,6 @@ Mark a game for admin review.
 
 | Event | Producing aggregate | Key payload fields | Downstream consumers |
 |---|---|---|---|
-| `GameInitialized` | `GameSession` | `game_id`, `room_id`, `player_order`, `initial_discard_top`, `state_version` | Spectator View, Tournament Orchestration |
 | `CardPlayed` | `GameSession` | `game_id`, `player_id`, `card`, `new_discard_top`, `active_color`, `state_version` | Spectator View |
 | `ColorDeclared` | `GameSession` | `game_id`, `player_id`, `declared_color`, `state_version` | Spectator View |
 | `CardDrawn` | `GameSession` | `game_id`, `player_id`, `new_hand_count`, `state_version` *(card identity omitted for spectators)* | Spectator View (filtered) |
@@ -399,7 +398,7 @@ Mark a game for admin review.
 | `PlayerAssignedToRoom` | `Room` | `room_id`, `player_id` | Spectator View |
 | `LobbyTimerStarted` | `Room` | `room_id`, `player_count`, `timer_expires_at` | Spectator View |
 | `LobbyTimerReduced` | `Room` | `room_id`, `new_expires_at` *(triggered when room fills to 10)* | Spectator View |
-| `GameStarted` | `Room` | `room_id`, `game_id`, `player_ids` | Spectator View, Tournament Orchestration |
+| `GameStarted` | `GameSession` | `room_id`, `game_id`, `player_ids`, `player_order`, `initial_discard_top`, `initial_direction: clockwise`, `state_version: 1` | Spectator View, Tournament Orchestration |
 | `RoomCompleted` | `Room` | `room_id`, `final_standings` | Spectator View, Tournament Orchestration |
 | `RoomCancelled` | `Room` | `room_id`, `reason: InsufficientPlayers\|TournamentCancelled` | Spectator View, Tournament Orchestration *(tournament rooms only, for `TournamentCancelled` reason)* |
 | `SpectatorJoined` | `Room` | `room_id`, `player_id` | Spectator View *(updates spectator count on `SpectatorRoomList` read model)* |

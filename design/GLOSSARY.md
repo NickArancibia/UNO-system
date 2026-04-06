@@ -68,11 +68,12 @@ This is the authoritative ubiquitous language for the UnoArena platform. All des
 | `lobby` | 5 or more players are present and the countdown timer is active. |
 | `in_progress` | The game (casual) or match (tournament) is actively being played. |
 | `completed` | The game or match has concluded; a winner or advancement list has been determined. |
+| `cancelled` | A room that was terminated before or during play due to an external event (e.g., the tournament it belongs to was admin-cancelled via `TournamentCancelled`). No final standings are produced and no Elo is applied. Also applies to casual rooms where the lobby timer expires with fewer than 2 active players. |
 | `game lifecycle` | The sequence of events from game initialization (deck shuffle, deal) through gameplay to game end (a player empties their hand or all but one player forfeit). |
 | `match lifecycle` | The sequence of events from match start through up to 3 games to match end, including early end (any player reaches 2 game wins) and timeout resolution. |
 | `tournament lifecycle` | The sequence from tournament registration open through sequential rounds to Final Room completion and champion declaration. |
 | `forfeit` | The permanent removal of a player from the current game (casual) or from the entire tournament (tournament). Causes: explicit forfeit command, AFK (3 consecutive expired turn timers while connected), or reconnection window expiry. All forfeits are equivalent for scoring and Elo purposes. |
-| `void` | A game outcome where no scores are recorded and no Elo changes are applied. Occurs when all active players forfeit simultaneously, leaving 0 active players. |
+| `void` | A game outcome where no scores are recorded and no Elo changes are applied. Applies exclusively to a game that has already `completed` and is subsequently voided by an admin via `VoidGameResult`. Note: reaching zero active players through in-game forfeits is unreachable — the last remaining active player wins immediately before that state is possible. |
 | `phase-start threshold` | The minimum number of qualifiers that must be available before the matchmaking system begins forming rooms for the next tournament round. Varies by round (see TOURNAMENT_RULES.md Section 5). |
 
 ---

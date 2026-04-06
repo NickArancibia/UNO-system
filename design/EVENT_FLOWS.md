@@ -48,17 +48,16 @@ Player A submits: JoinQueue
 
 ```
 [TIMER] Lobby timer expires; 10 active players present
-[SYNC] Room transitions lobby → in_progress
-  → GameStarted {room_id: R1, game_id: G1, player_ids: [A..J]}
-
-[SYNC] GameSession initializes:
+[SYNC] Room transitions lobby → in_progress; GameSession initializes atomically:
   - Server shuffles 108-card deck (server-side RNG)
   - Deals 7 cards to each of 10 players (70 cards dealt)
   - Reveals top card of draw pile; if not a number card, reinsert and repeat
   - Sets turn_index, direction: clockwise, state_version: 1
-  → GameInitialized {game_id: G1, player_order: [...], initial_discard_top: Red 5, state_version: 1}
+  → GameStarted {room_id: R1, game_id: G1, player_ids: [A..J],
+                 player_order: [...], initial_discard_top: Red 5,
+                 initial_direction: clockwise, state_version: 1}
 
-[ASYNC] Spectator View receives GameInitialized
+[ASYNC] Spectator View receives GameStarted
   → PublicGameView created for G1 (no hand data)
 ```
 
@@ -215,7 +214,8 @@ This flow covers one full elimination round: qualifier accumulation, progressive
 --- Game 1 of 3 ---
 
   → GameInMatchStarted {match_id: M-2-001, game_id: G-2-001-1, sequence_number: 1}
-  → GameInitialized {game_id: G-2-001-1, ...}
+  → GameStarted {room_id: R-2-001, game_id: G-2-001-1, player_ids: [...],
+                 player_order: [...], initial_discard_top: ..., state_version: 1}
 
   >> Gameplay proceeds (same loop as Flow 1 Phase C)
 

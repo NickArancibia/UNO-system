@@ -90,7 +90,7 @@ Tracks the Best-of-Three series played within a single tournament room. Coordina
 1. A match contains at most 3 games.
 2. The match ends immediately when any player reaches `match_wins = 2` (early end).
 3. If no player reaches 2 wins after Game 2, Game 3 is always played.
-4. When `timeout_deadline` is reached during an active game, that game is resolved immediately using current hands (highest score → fewest cards → random); the match then ends.
+4. When `timeout_deadline` is reached during an active game, that game is resolved immediately using current hands (lowest card-point burden → fewest cards remaining → random tiebreak); the match then ends.
 5. Match standings are recomputed after every completed game; `match_wins`, `cumulative_card_point_burden`, and `cumulative_cards_remaining` are always consistent with completed game results.
 6. A forfeited player's `match_standing` is frozen at the time of forfeit; they rank below all non-forfeited players regardless of standing.
 7. If forfeits reduce active players to 1, remaining games are not played; that player wins the match unconditionally.
@@ -254,7 +254,7 @@ Value objects have no identity; they are defined entirely by their attributes an
 | `GamePlacement` | `player_id`, `rank`, `game_score`, `cards_remaining` | `MatchGame`, `GameSession` | Final result for one player in one game |
 | `Placement` | `player_id`, `rank`, `scope: game\|room\|tournament` | `GameSession`, `Match`, `Tournament` | Scoped ranking result; scope disambiguates usage |
 | `EloRating` | `value`, `k_factor_tier: provisional\|established\|veteran` | `EloRecord` | K-factor tier derived from `EloRecord.games_played`: <20 → 32, 20–99 → 16, 100+ → 12 (casual); always 40 (tournament) |
-| `PlayerStats` | `games_played`, `casual_wins`, `cumulative_points`, `tournaments_won` | `PlayerProfile` | Aggregate statistics for the player's public profile |
+| `PlayerStats` | `total_games_played` (casual + tournament), `casual_wins`, `cumulative_points`, `tournaments_won` | `PlayerProfile` | Aggregate statistics for the player's public profile. `total_games_played` counts all completed games regardless of type; it is distinct from `EloRecord.games_played`, which counts only completed casual games and drives the K-factor tier. |
 | `StateVersion` | `value: int` | `GameSession` | Monotonically increasing; compared on every command to enforce optimistic concurrency |
 | `IdempotencyKey` | `uuid` | All commands | Client-generated UUID; server stores result keyed by this value for at-least-once safety |
 | `ReconnectionWindow` | `player_id`, `started_at`, `expires_at`, `game_id` | `PlayerSession` | 60-second server-tracked window; expiry triggers automatic forfeit |
@@ -296,10 +296,10 @@ Spectator View is a projection context — it owns no aggregates. Its DDD artifa
 
 | Read Model | Built from events | Fields exposed | Fields withheld |
 |---|---|---|---|
-| `PublicGameView` | `GameStarted`, `CardPlayed`, `CardDrawn`, `TurnAdvanced`, `DirectionReversed`, `PlayerSkipped`, `PenaltyApplied`, `UnoCallMade`, `UnoChallengeResolved`, `WildDrawFourPlayed`, `WildDrawFourChallengeResolved`, `PlayerDisconnected`, `PlayerReconnected`, `PlayerForfeited`, `GameCompleted` | Player names, hand counts (per player), discard pile (full history + top card), draw pile size, turn order, current direction, active color, current player, scores, all game events | Card identities in any player's hand; WD4 accused player's hand composition (until post-game) |
+| `PublicGameView` | `GameStarted`, `CardPlayed`, `CardDrawn`, `TurnAdvanced`, `DirectionReversed`, `PlayerSkipped`, `DrawTwoActivated`, `DrawTwoStacked`, `JumpInOccurred`, `RaceResolved`, `PenaltyCardsDrawn`, `DrawPileReplenished`, `ChallengeWindowOpened`, `ChallengeWindowClosed`, `UnoCallMade`, `UnoChallengeResolved`, `WildDrawFourActivated`, `WildDrawFourChallengeResolved`, `PlayerDisconnected`, `PlayerReconnected`, `PlayerForfeited`, `GameCompleted` | Player names, hand counts (per player), discard pile (full history + top card), draw pile size, turn order, current direction, active color, current player, scores, all game events | Card identities in any player's hand; WD4 accused player's hand composition (until post-game) |
 | `PublicGameLog` | All `GameCompleted` events + full event history | Everything in `PublicGameView` plus: card identities for all draws and plays, WD4 accused hand composition, final standings | Nothing — full log is public post-game |
 | `BracketView` | `RoundStarted`, `TournamentRoomAssigned`, `MatchStarted`, `MatchCompleted`, `AdvancementResolved`, `TournamentCompleted` | Tournament structure, round number, room assignments (player names), match status, qualifier results per room, current round progress | Individual game scores mid-match (only final match standings are shown) |
-| `SpectatorRoomList` | `RoomCreated`, `RoomStatusChanged`, `PlayerJoinedRoom`, `GameStarted`, `GameCompleted` | Room ID, room type, status, player count, spectator count | Player hand information |
+| `SpectatorRoomList` | `RoomCreated`, `RoomStatusChanged`, `PlayerAssignedToRoom`, `GameStarted`, `GameCompleted` | Room ID, room type, status, player count, spectator count | Player hand information |
 | `LeaderboardView` | `EloUpdated` (from Ranking context) | Player name, region, casual Elo, tournament Elo, rank position | Internal K-factor tier, raw game statistics |
 
 **Key projection rules:**
