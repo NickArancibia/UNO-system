@@ -174,7 +174,7 @@ All terms follow [GLOSSARY.md](../design/GLOSSARY.md). Bounded context definitio
 - Game state changes → Room Gameplay (via `VoidGameResult`)
 - Tournament cancellation → Tournament Orchestration (via `CancelTournament`)
 - Player suspension/ban → Identity/Session (via `SuspendPlayer` / `BanPlayer` sync call)
-- Elo reversal → Ranking (via `GameResultVoided` / `TournamentCancelled` events)
+- Elo reversal → Ranking (via `GameResultVoided` event on `moderation-events` Kafka topic; `TournamentCancelled` stays on `tournament-events`)
 
 ---
 
@@ -191,6 +191,6 @@ All terms follow [GLOSSARY.md](../design/GLOSSARY.md). Bounded context definitio
 | Tournament Orchestration → Spectator View | Published Language | `tournament-events` Kafka topic; bracket and match events |
 | Tournament Orchestration → Analytics | Published Language | `tournament-events` Kafka topic; dedicated consumer group |
 | Ranking → Analytics | Published Language | `ranking-events` Kafka topic; `EloUpdated` / `TournamentEloUpdated` |
-| Moderation → All upstream | Downstream Observer + Corrective | Sync HTTP (SuspendPlayer); Kafka events (GameResultVoided, TournamentCancelled) |
+| Moderation → All upstream | Downstream Observer + Corrective | Sync HTTP (SuspendPlayer, BanPlayer, CancelTournament); `moderation-events` Kafka topic (GameResultVoided, GameFlagged) |
 | API Gateway → Identity/Session | Cache-Aside | Redis `identity:vsf:<player_id>`; fallback HTTP on cache miss |
 | Identity/Session → API Gateway | Redis Pub/Sub push | `session:invalidated:<player_id>` channel → Gateway closes WebSocket |

@@ -412,6 +412,7 @@ Client              API Gateway           identity-service          PostgreSQL  
 | Dependency | Direction | Mechanism | What is delegated |
 |---|---|---|---|
 | API Gateway | Inbound | HTTP REST | Auth commands; JWT validation cache-miss query |
+| API Gateway | Outbound HTTP (mTLS, internal) | `POST /internal/push/{player_id}` — used to deliver the session-invalidation close frame and any reconnection prompts to a specific player's live WebSocket; 404 = player not connected (no-op) | Server-initiated WebSocket push for session lifecycle events |
 | Moderation | Inbound | HTTP (mTLS, internal) | `SuspendPlayer`, `BanPlayer` corrective commands |
 | Room Gameplay | Outbound event | Kafka `identity-events` topic | `SessionInvalidated` → Room Gameplay emits `PlayerDisconnected`; `ReconnectionWindowExpired` → `PlayerForfeited`; `PlayerSuspended`/`PlayerBanned` → `PlayerForfeited` if in active game |
 | Tournament Orchestration | Outbound event | Kafka `identity-events` topic | `SessionInvalidated`, `PlayerSuspended`, `PlayerBanned` — Tournament Orchestration tracks eliminations |

@@ -14,6 +14,10 @@ This directory contains the complete microservices architecture for UnoArena, de
 | [INTEGRATION_VIEW.md](./INTEGRATION_VIEW.md) | Sync/async patterns; full integration table; client connection model |
 | [PERSISTENCE.md](./PERSISTENCE.md) | Per-context data stores, consistency model, read paths, audit |
 | [CAPACITY_SKETCH.md](./CAPACITY_SKETCH.md) | Load estimates, scaling decisions, spectator multiplier |
+| [CHANGELOG-design.md](./CHANGELOG-design.md) | Design artifact changes for architecture; confirms no domain guarantee was weakened |
+| [NFR_MATRIX.md](./NFR_MATRIX.md) | Latency budgets, throughput targets, availability SLAs, and scalability model |
+| [THREAT_MODEL.md](./THREAT_MODEL.md) | STRIDE threat analysis for public APIs, session security, game integrity, and privilege escalation |
+| [OBSERVABILITY.md](./OBSERVABILITY.md) | Logging schema, metrics, distributed tracing, correlation IDs, tournament round health dashboard |
 | **services/** | Per-service specification files (one per bounded context) |
 | **adr/** | Architecture Decision Records (ADR-001 through ADR-008) |
 

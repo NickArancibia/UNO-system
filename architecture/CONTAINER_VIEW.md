@@ -75,12 +75,17 @@ All decisions are traceable to the plan in [PLAN.md](./PLAN.md) and the resolved
 ║  │  ┌───────────┴────────────────────────────────────────────────────────────────┐  ║
 ║  │  │                          Kafka Broker (cluster)                             │  ║
 ║  │  │                                                                              │  ║
-║  │  │  game-events        — partitioned by game_id (≥100 partitions)             │  ║
-║  │  │  tournament-events  — partitioned by tournament_id                         │  ║
-║  │  │  identity-events    — partitioned by player_id                             │  ║
-║  │  │  ranking-events     — partitioned by player_id                             │  ║
+║  │  │  game-events          — partitioned by game_id (≥100 partitions)           │  ║
+║  │  │  tournament-events    — partitioned by tournament_id                       │  ║
+║  │  │  tournament-kickoff   — partitioned by room_id (≥100 partitions);          │  ║
+║  │  │                          TournamentRoomAssigned only; produced by           │  ║
+║  │  │                          tournament-service; consumed by Room Gameplay      │  ║
+║  │  │                          workers (surge fan-out at round kickoff)           │  ║
+║  │  │  identity-events      — partitioned by player_id                           │  ║
+║  │  │  ranking-events       — partitioned by player_id                           │  ║
 ║  │  │                                                                              │  ║
-║  │  │  Retention: 7 days (game-events); 30 days (tournament/identity/ranking)    │  ║
+║  │  │  Retention: 7 days (game-events, tournament-kickoff);                       │  ║
+║  │  │             30 days (tournament-events/identity/ranking)                    │  ║
 ║  │  └───────────┬────────────────────────────────────────────────────────────────┘  ║
 ║  │              │                                                                    ║
 ║  │  ┌───────────┼────────────────────────────────────────────────────────────────┐  ║
@@ -165,6 +170,7 @@ All decisions are traceable to the plan in [PLAN.md](./PLAN.md) and the resolved
 **Interfaces:**
 - Inbound: HTTPS/WSS from clients
 - Outbound: HTTP to `identity-service` (cache miss), `room-gameplay-service` (game commands), `tournament-service`, `moderation-service`
+- Inbound (internal, mTLS): `POST /internal/push/{player_id}` — server-initiated WebSocket push from any backend service (room-gameplay-service, identity-service). The gateway looks up the player's connection in its in-memory registry and writes the payload to the WebSocket. Returns `200 OK` if delivered, `404` if no live connection for that player (caller treats 404 as a no-op — the player is not connected).
 - Redis: reads `identity:vsf:<player_id>` (cache-aside), writes `ratelimit:ip:*` and `ratelimit:user:*`, subscribes to `session:invalidated:*` Pub/Sub
 
 ---
@@ -195,9 +201,9 @@ All decisions are traceable to the plan in [PLAN.md](./PLAN.md) and the resolved
 |---|---|
 | **Name** | `room-gameplay-service` |
 | **Context** | Room Gameplay |
-| **Technology** | JVM or Go service; PostgreSQL (`gameplay` schema); Redis (timer TTLs, distributed lock, idempotency cache) |
+| **Technology** | JVM or Go service; PostgreSQL (`gameplay` schema, sharded ×16 by `game_id % 16`; see CAPACITY_SKETCH.md §5); Redis (timer TTLs, distributed lock, idempotency cache) |
 | **Primary responsibility** | All in-game logic, state version enforcement, legal play validation, log-before-broadcast via transactional outbox |
-| **Instances** | Horizontally scalable; per-game serialization via PostgreSQL row-level lock (not sticky routing) |
+| **Instances** | Horizontally scalable; per-game serialization via PostgreSQL row-level lock (not sticky routing); each pod connects to all 16 shards and routes by `game_id % 16` |
 | **Owns** | `game_sessions`, `game_events`, `rooms`, `matchmaking_queue`, `outbox` tables |
 
 **Interfaces:**
@@ -215,9 +221,9 @@ All decisions are traceable to the plan in [PLAN.md](./PLAN.md) and the resolved
 |---|---|
 | **Name** | `outbox-relay-worker` |
 | **Context** | Room Gameplay (internal process) |
-| **Technology** | Same JVM/Go process as `room-gameplay-service`, or a companion sidecar process sharing the same PostgreSQL schema |
-| **Primary responsibility** | Read undelivered outbox rows, publish to Kafka with `enable.idempotence=true`, mark rows delivered |
-| **Instances** | One active per `room-gameplay-service` shard (or a single shared relay if not sharded) |
+| **Technology** | Same JVM/Go process as `room-gameplay-service`, or a companion sidecar process sharing the same PostgreSQL shards |
+| **Primary responsibility** | Read undelivered outbox rows from all 16 shards, publish to Kafka with `enable.idempotence=true`, mark rows delivered |
+| **Instances** | One relay thread per shard (16 relay threads per pod); each thread polls its shard's `outbox` table independently |
 | **Owns** | No additional storage; reads/writes the `outbox` table owned by `room-gameplay-service` |
 
 ---
@@ -256,8 +262,9 @@ All decisions are traceable to the plan in [PLAN.md](./PLAN.md) and the resolved
 
 **Interfaces:**
 - Consumes: `game-events` Kafka topic (consumer group `ranking-cg`) for `GameCompleted`
-- Consumes: `tournament-events` Kafka topic (consumer group `ranking-tournament-cg`) for `TournamentCompleted`
-- Consumes: `ranking-events` (self, for `GameResultVoided`, `TournamentCancelled` from moderation path via Kafka)
+- Consumes: `tournament-events` Kafka topic (consumer group `ranking-tournament-cg`) for `TournamentCompleted`, `TournamentCancelled`
+- Consumes: `moderation-events` Kafka topic (consumer group `ranking-moderation-cg`) for `GameResultVoided`
+- Consumes: `identity-events` Kafka topic (consumer group `ranking-identity-cg`) for `PlayerRegistered`
 - Produces: `ranking-events` Kafka topic (`EloUpdated`, `TournamentEloUpdated`, `EloReverted`)
 
 ---
@@ -268,18 +275,19 @@ All decisions are traceable to the plan in [PLAN.md](./PLAN.md) and the resolved
 |---|---|
 | **Name** | `spectator-service` |
 | **Context** | Spectator View |
-| **Technology** | JVM or Go service; Redis (PublicGameView hash, SpectatorRoomList); PostgreSQL (PublicGameLog sealed post-game, BracketView persistent) |
-| **Primary responsibility** | Privacy-filtered live game projection; spectator WebSocket connections (via Gateway); reconnection snapshots |
-| **Instances** | Horizontally scalable; spectator WebSocket connections fanned out via Redis Pub/Sub per `game_id` |
-| **Owns** | `public_game_logs`, `bracket_views` PostgreSQL tables; `spectator:gameview:<game_id>` and `spectator:roomlist:<room_id>` Redis hashes |
+| **Technology** | JVM or Go service; Redis (Streams per `game_id`, PublicGameView hash, LeaderboardView sorted sets); PostgreSQL (PublicGameLog sealed post-game, BracketView persistent) |
+| **Primary responsibility** | Privacy-filtered live game projection; spectator WebSocket connections (via Gateway); fan-out via Redis Streams (`XREAD BLOCK`); reconnection snapshots from Stream + Hash |
+| **Instances** | Horizontally scalable; any instance can serve any spectator — Redis Streams provide shared history without sticky routing |
+| **Owns** | `public_game_logs`, `bracket_views` PostgreSQL tables; `spectator:stream:<game_id>` Redis Streams; `spectator:gameview:<game_id>` Redis Hashes; `spectator:roomlist:<room_id>` Redis Hashes; `spectator:leaderboard:*` Redis Sorted Sets |
 
 **Interfaces:**
 - Inbound: WebSocket connections from API Gateway (spectator streams)
 - Inbound: HTTP from API Gateway (game log query, bracket query, leaderboard query)
-- Consumes: `game-events` Kafka topic (consumer group `spectator-cg`) — applies privacy whitelist before storing
+- Consumes: `game-events` Kafka topic (consumer group `spectator-game-cg`) — applies privacy whitelist at consumption before any data enters read model
 - Consumes: `tournament-events` Kafka topic (consumer group `spectator-tournament-cg`)
 - Consumes: `ranking-events` Kafka topic (consumer group `spectator-ranking-cg`) for `EloUpdated`
-- Outbound: WebSocket push to connected spectators; Redis `spectator:gameview:<game_id>` updates
+- Consumes: `moderation-events` Kafka topic (consumer group `spectator-moderation-cg`) for `GameFlagged`
+- Outbound: WebSocket push to connected spectators; `XADD spectator:stream:<game_id>` (filtered events); `HSET spectator:gameview:<game_id>` (snapshot fields)
 
 ---
 
@@ -289,13 +297,13 @@ All decisions are traceable to the plan in [PLAN.md](./PLAN.md) and the resolved
 |---|---|
 | **Name** | `analytics-service` (query API) + `analytics-worker` (N consumer instances) |
 | **Context** | Analytics / Read Models |
-| **Technology** | Workers: JVM or Go; Store: ClickHouse (columnar, analytics-native) or PostgreSQL with materialized views (to be decided — ADR-008 area); Query service: JVM/Go |
+| **Technology** | Workers: JVM or Go; Store: ClickHouse 23+ (columnar, analytics-native; O8 decision); Query service: JVM/Go |
 | **Primary responsibility** | Burst-absorbing projection of all `GameCompleted` events at round end; player stats; bracket/standings views; leaderboard display copies |
 | **Instances** | Workers: N instances (e.g., 20 workers × 5 partitions each = 100 partitions coverage); analytics-service: horizontally scalable read API |
 | **Owns** | `player_statistics`, `tournament_bracket`, `round_standings`, `game_history`, `leaderboard_display` tables |
 
 **Interfaces:**
-- Workers consume: `game-events` (consumer group `analytics-game-cg`), `tournament-events` (consumer group `analytics-tournament-cg`), `ranking-events` (consumer group `analytics-ranking-cg`)
+- Workers consume: `game-events` (consumer group `analytics-game-cg`), `tournament-events` (consumer group `analytics-tournament-cg`), `ranking-events` (consumer group `analytics-ranking-cg`), `moderation-events` (consumer group `analytics-moderation-cg`)
 - `analytics-service`: read-only HTTP API from API Gateway; no commands accepted
 
 ---
@@ -314,7 +322,8 @@ All decisions are traceable to the plan in [PLAN.md](./PLAN.md) and the resolved
 **Interfaces:**
 - Inbound: HTTP REST from API Gateway (admin-authenticated endpoints only)
 - Outbound: HTTP to `identity-service` (`SuspendPlayer`, `BanPlayer`)
-- Outbound: produces `identity-events` Kafka topic (`GameResultVoided`, `TournamentCancelled`)
+- Outbound: HTTP to `tournament-service` (`CancelTournament`)
+- Produces: `moderation-events` Kafka topic (`GameResultVoided`, `GameFlagged`)
 - Consumes: `identity-events` Kafka topic (consumer group `moderation-cg`) for `ActionRateLimitExceeded`
 
 ---
@@ -334,10 +343,13 @@ All decisions are traceable to the plan in [PLAN.md](./PLAN.md) and the resolved
 
 | Component | Technology | Purpose | Eviction policy |
 |---|---|---|---|
-| Redis (cache DB) | Redis 7+ | `valid_sessions_from` cache, idempotency caches | `allkeys-lfu` |
-| Redis (timer DB) | Redis 7+ (same cluster, separate logical DB) | Turn timers, challenge windows, reconnection windows, match timeouts, AFK counters, distributed locks | `noeviction` (timers must not be silently evicted) |
-| Redis (leaderboard DB) | Redis 7+ (separate logical DB or instance) | Casual + tournament Elo leaderboards | `noeviction` (leaderboard must not lose entries) |
-| Redis (pub/sub) | Redis 7+ | `session:invalidated:*` channel | N/A (fire-and-forget) |
+| Redis cache instance | Redis 7+ (standalone or Sentinel pair) | `valid_sessions_from` cache, idempotency caches | `allkeys-lfu` |
+| Redis timer instance | Redis 7+ (standalone or Sentinel pair) | Turn timers, challenge windows, reconnection windows, match timeouts, AFK counters, distributed locks | `noeviction` (timers must not be silently evicted) |
+| Redis leaderboard instance | Redis 7+ (standalone or Sentinel pair) | Casual + tournament Elo leaderboards | `noeviction` (leaderboard must not lose entries) |
+| Redis session-invalidation instance | Redis 7+ (standalone or Sentinel pair) | `session:invalidated:*` Pub/Sub channel | N/A (fire-and-forget; eviction irrelevant) |
+| Redis spectator-streams instance | Redis 7+ (standalone or Sentinel pair; sized for ~6GB at 100K games) | `spectator:stream:{game_id}` — privacy-filtered game event fan-out with MAXLEN ~200 history; XREAD BLOCK for live delivery; EXPIRE on GameCompleted + 24h | `noeviction` (streams must not be evicted mid-game; deleted via EXPIRE) |
+
+> **Note on Redis Cluster:** Redis Cluster supports only logical DB 0; multiple logical databases (SELECT N) are not available in cluster mode. Each functional Redis tier is therefore a **separate standalone instance or Sentinel-managed pair**, not a shared cluster with multiple logical DBs. Key-prefix namespacing (`identity:*`, `gameplay:*`, etc.) is still applied within each instance to aid observability but is not relied on for isolation — isolation is physical (separate instances). Redis Cluster may be used within each individual instance group for intra-instance HA but is not used to share a single cluster across tiers.
 | Kafka | Apache Kafka (or Confluent) | All async cross-context event delivery | Per-topic retention policies |
 | PostgreSQL | PostgreSQL 15+ | All durable aggregate state and immutable logs | N/A (durable) |
-| ClickHouse (TBD) | ClickHouse 23+ | Analytics burst-absorbing columnar store | N/A (append-only) |
+| ClickHouse | ClickHouse 23+ | Analytics burst-absorbing columnar store; 100K+ rows/s batch insert; materialized views for aggregations | N/A (append-only) |

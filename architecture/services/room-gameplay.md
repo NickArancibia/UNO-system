@@ -35,8 +35,9 @@ Room Gameplay is the authoritative owner of all in-game state. It enforces every
 | `outbox-relay-worker` | In-process background thread (within `room-gameplay-service`) | Reads undelivered outbox rows, publishes to Kafka, marks rows delivered |
 | `matchmaking-worker` | In-process background thread (within `room-gameplay-service`) | Polls `matchmaking_queue` table with `SELECT FOR UPDATE SKIP LOCKED`, assembles rooms |
 | `timer-subscription-worker` | In-process background thread (within `room-gameplay-service`) | Subscribes to Redis keyspace expiry notifications, routes to timer handlers |
+| `tournament-kickoff-consumer-worker` | In-process background thread (within `room-gameplay-service`) | Consumes `tournament-kickoff` Kafka topic (consumer group `room-gameplay-kickoff-cg`); creates tournament rooms and assigns players; idempotent by pre-assigned `room_id` |
 
-All four run in the same deployed container. There is no separate deployment for the relay or matchmaking workers.
+All five run in the same deployed container. There is no separate deployment for the relay, matchmaking, or kickoff workers.
 
 ---
 
@@ -89,6 +90,7 @@ These endpoints are not exposed via the API Gateway. mTLS required.
 | `CreateRoom` | `POST /v1/internal/rooms` | Pre-assigned `room_id` from Tournament Orchestration (deterministic, idempotent) |
 | `AssignPlayersToRoom` | `POST /v1/internal/rooms/{room_id}/players` | Bulk assignment; idempotent by `(room_id, player_id)` |
 | `ForceCompleteGame` | `POST /v1/internal/games/{game_id}/force-complete` | Resolves active game for match timeout; idempotent by `game_id` |
+| `StartNextGameInRoom` | `POST /v1/internal/rooms/{room_id}/games` | Initializes a new `GameSession` in an existing tournament room (Game 2 or Game 3); `{match_id, game_sequence_number: 2|3, idempotency_key}`; no lobby timer (immediate deal); idempotent by `(room_id, game_sequence_number)` |
 
 ---
 
@@ -277,6 +279,51 @@ Timer keys are set with `SETNX` (NX flag): if the key already exists, the timer 
    - Second acquires lock: reads new state_version, timer_token no longer matches → no-op.
 ```
 
+### Reconciliation Sweeps (missed-notification safety net)
+
+Redis keyspace notifications are at-most-once. Two background sweeps in `timer-subscription-worker` compensate for lost notifications:
+
+**Turn-timer sweep — every 60s:**
+```sql
+SELECT game_id, state->>'turn_timer_token' AS token
+FROM game_sessions
+WHERE status = 'in_progress'
+  AND (state->>'turn_started_at')::timestamptz < now() - INTERVAL '45 seconds'
+```
+For each result: check that `gameplay:turn-timer:<game_id>` does NOT exist in Redis (confirms
+the key expired and the notification was missed). If absent → issue synthetic `TurnTimedOut`
+command through the normal handler (same token fence applies).
+
+**Challenge-window sweep — every 2s:**
+```sql
+SELECT game_id, state->>'challenge_window_token' AS token,
+       state->>'challenge_window_type' AS window_type
+FROM game_sessions
+WHERE status = 'in_progress'
+  AND state->>'challenge_window_status' = 'open'
+  AND (state->>'challenge_window_opened_at')::timestamptz < now() - INTERVAL '5 seconds'
+```
+For each result: check that `gameplay:challenge:<game_id>:<state_version>:<window_type>` does
+NOT exist in Redis. If absent → issue synthetic `ChallengeWindowExpired` command.
+
+The 2-second interval is necessary: a 60-second sweep interval for a 5-second window would
+extend the challenge window from 5s to up to 60s on a missed notification — a game-rule
+violation. The 2-second sweep touches only games with an open challenge window, which is a
+small subset of all active games at any instant.
+
+To make the `challenge_window_status` query efficient, `game_sessions` carries a
+`challenge_window_open BOOLEAN GENERATED ALWAYS` column derived from the JSONB state, indexed
+separately:
+```sql
+ALTER TABLE game_sessions
+  ADD COLUMN challenge_window_open BOOLEAN NOT NULL DEFAULT false;
+
+CREATE INDEX ON game_sessions (challenge_window_open)
+  WHERE challenge_window_open = true;
+```
+This column is set to `true` on `ChallengeWindowOpened` commit and `false` on
+`ChallengeWindowClosed` commit, inside the same transaction as the state update.
+
 ---
 
 ## 7. Sequence-Number Enforcement
@@ -341,15 +388,76 @@ The full game log is never exposed to clients via the public API. Privacy filter
 
 ---
 
-## 10. Dependencies on Other Contexts
+## 10. Persistence and Sharding
+
+### 10.1 Primary Store
+
+**PostgreSQL 15+** — `gameplay` schema (or sharded set of schemas, see §10.2).
+
+| Table | Purpose | Write pattern | Consistency |
+|---|---|---|---|
+| `game_sessions` | Authoritative aggregate state (JSONB) + `state_version` | Row-lock (`SELECT FOR UPDATE`), update on every command | Strong (per-game linearized) |
+| `game_events` | Immutable append-only game log | Append-only; one row per event per command | Strong (same transaction as state update) |
+| `rooms` | Room lifecycle, player membership, status | Row-lock on room operations | Strong |
+| `matchmaking_queue` | Quick Play queue entries | `SELECT FOR UPDATE SKIP LOCKED` | Strong (queue semantics) |
+| `outbox` | Transactional outbox for Kafka relay | Append + mark delivered | Strong (same transaction as state update) |
+
+**Transactional boundary:** Every accepted game command is a single PostgreSQL transaction containing: `UPDATE game_sessions`, `INSERT INTO game_events`, `INSERT INTO outbox`. This is the log-before-broadcast guarantee (see §5).
+
+### 10.2 Sharding Strategy
+
+At 100K concurrent games with ~1 command per second per game, the `game_sessions` table sustains ~100K TPS — well beyond a single PostgreSQL instance's capacity for row-lock-heavy write workloads (~10K–30K TPS).
+
+The gameplay database is sharded by `game_id % 16` (16 shards). Each shard is an independent PostgreSQL instance (or a separate schema on a dedicated server for lower environments).
+
+**Routing:** The `game_id` is included in every command URL (`POST /v1/games/{game_id}/commands/play-card`). The API Gateway or an internal routing layer extracts `game_id`, computes `game_id % 16`, and routes the request to any `room-gameplay-service` pod. Every pod connects to all 16 shards and includes the shard number in its connection pool key.
+
+**Shard-local tables:** `game_sessions`, `game_events`, `outbox`, `rooms` — all include `game_id` (or `room_id`, which is derived from `game_id` / deterministically assigned) as a leading column in their primary key, enabling shard-local queries.
+
+**Unsharded table:** `matchmaking_queue` remains on shard 0 (or a dedicated small instance) — write volume is low (players joining/leaving Quick Play) and the `SELECT FOR UPDATE SKIP LOCKED` pattern requires a single table.
+
+**Per-shard TPS:** 100,000 / 16 ≈ 6,250 TPS per shard. A well-tuned PostgreSQL instance handles this with SSD-backed storage and appropriate `shared_buffers` / `work_mem` settings.
+
+**Outbox relay:** One relay thread per shard (16 relay threads per pod), each polling its shard's `outbox` table independently. This avoids cross-shard polling complexity.
+
+**Migration path:** Start with N=4 shards at low traffic. Scale to N=8, then N=16 as concurrent games grow. Resharding requires brief downtime for data movement but no application schema changes — all queries already include `game_id`.
+
+### 10.3 Read Path for Game Log
+
+| Access path | Authorized by | Returns | Store |
+|---|---|---|---|
+| `GET /v1/games/{game_id}/log` | Player JWT (own games only, or any player post-game) | Public-filtered log: card identities withheld during game; WD4 accused hand revealed after `GameCompleted` | PostgreSQL `game_events` on the game's shard |
+| `GET /v1/internal/games/{game_id}/log/full` | Moderation admin token (mTLS, internal) | Complete unfiltered log including all hand events and RNG seeds | PostgreSQL `game_events` on the game's shard |
+| Spectator View `PublicGameLog` | Via spectator-service public API | Privacy-filtered sealed log | PostgreSQL `public_game_logs` (Spectator's own schema) |
+
+The game log is **immutable after `GameCompleted`**. No UPDATE or DELETE is ever issued against `game_events`. The primary key `(game_id, state_version)` ensures efficient range scans for full game replay.
+
+### 10.4 Redis Usage (Room Gameplay)
+
+All Redis keys used by this service are prefixed `gameplay:*`. See [PLAN.md](../PLAN.md) §Redis Usage Map for key templates and patterns.
+
+| Key pattern | Purpose | Instance | TTL |
+|---|---|---|---|
+| `gameplay:turn-timer:<game_id>` | Turn timer (45s) | Timer instance | 45,000 ms |
+| `gameplay:challenge:<game_id>:<state_version>:<type>` | Challenge window (5s) | Timer instance | 5,000 ms |
+| `gameplay:idem:<game_id>:<idempotency_key>` | Idempotency cache | Cache instance | Game duration + 24h |
+| `gameplay:lobby-timer:<room_id>` | Lobby timer | Timer instance | Configurable (5min / 10s) |
+| `gameplay:lobby-lock:<room_id>` | Distributed lock for lobby start | Cache instance | 10,000 ms |
+| `gameplay:afk:<game_id>` | AFK counter per player | Cache instance | Game duration |
+
+---
+
+## 11. Dependencies on Other Contexts
 
 | Dependency | Direction | Mechanism | What is delegated |
 |---|---|---|---|
 | Identity / Session | Upstream | JWT claims validated at API Gateway; `player_id` injected into request headers | Player identity, session validity |
 | Identity / Session | Inbound event | Consumes `identity-events` Kafka topic: `SessionInvalidated` → marks player as disconnected; `PlayerSuspended`/`PlayerBanned` → triggers `PlayerForfeited` if in active game | Session invalidation mid-game |
 | Identity / Session | Inbound event | `ReconnectionWindowExpired` on `identity-events` → issues `PlayerForfeited` | Reconnection window expiry (timer owned by Identity/Session, not here) |
-| Identity / Session | Inbound event | `PlayerReconnected` on `identity-events` → re-activates player in `PlayerHand.connected`, emits `PlayerReconnected` (game event) to Spectator View, pushes full `GameSession` state snapshot to player's WebSocket via Gateway | Reconnection completion; snapshot delivery |
-| Tournament Orchestration | Inbound command | Receives `CreateRoom`, `AssignPlayersToRoom`, `ForceCompleteGame` via internal HTTP | Tournament room creation and match timeout resolution |
+| Identity / Session | Inbound event | `PlayerReconnected` on `identity-events` → re-activates player in `PlayerHand.connected`, emits `PlayerReconnected` (game event) to Spectator View, then calls `POST /internal/push/{player_id}` on the API Gateway with the full public `GameSession` state snapshot (hand contents, discard top, draw pile count, turn order, current version) | Reconnection completion; snapshot delivery via Gateway push endpoint |
+| API Gateway | Outbound HTTP (mTLS, internal) | `POST /internal/push/{player_id}` — used to deliver server-initiated payloads (reconnect snapshot, timer-expiry side-effect broadcasts) to a specific player's live WebSocket connection | Server-initiated WebSocket push; 404 = player not connected (no-op) |
+| Tournament Orchestration | Inbound command | Receives `CreateRoom`, `AssignPlayersToRoom`, `ForceCompleteGame`, `StartNextGameInRoom` via internal HTTP | Tournament room creation, match timeout resolution, Bo3 game sequencing |
+| Tournament Orchestration | Inbound event | Consumes `tournament-kickoff` Kafka topic (`TournamentRoomAssigned`); creates room and assigns players atomically | Surge fan-out path for round-kickoff (100K rooms at `StartTournament`); replaces HTTP for the first-game creation at scale |
 | Ranking | Outbound event | Publishes `GameCompleted` on `game-events` topic; Ranking consumes asynchronously | Elo calculation |
 | Spectator View | Outbound event | All game events published via outbox to `game-events` topic; Spectator View applies privacy filter | Live game projection |
 | Analytics | Outbound event | `GameCompleted`, `PlayerForfeited` on `game-events` topic | Player stats, round-end spike absorption |

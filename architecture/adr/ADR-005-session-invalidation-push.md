@@ -82,7 +82,13 @@ The specific reasons for preferring Pub/Sub over Kafka:
 
 ## Consequences
 
-- **Message loss is possible but acceptable.** If a gateway instance misses the Pub/Sub message (e.g., Redis restart), it will disconnect the old session on the next command (JWT validation). The maximum exposure window is bounded by how quickly the old device submits a command.
+- **Message loss is possible but mitigated.** If a gateway instance misses the Pub/Sub message (e.g., Redis restart), the old connection is not immediately closed. Two mechanisms bound the exposure window:
+
+  1. **Inbound command path (existing):** The next command from the old device fails JWT validation (`issued_at < valid_sessions_from`) → gateway closes the connection. For an active player this happens within seconds.
+
+  2. **Outbound push heartbeat (added):** The gateway validates `valid_sessions_from` on every *outbound* WebSocket push to connections that have been idle (no inbound command) for more than 30 seconds. On game-event broadcasts, the gateway checks the recipient connection's `issued_at` against the cached `valid_sessions_from` value before forwarding the frame. If stale, it closes the connection at that point rather than delivering the frame.
+
+  Combined, the maximum exposure window for a passive player (waiting for their turn, submitting no commands) is bounded by **30 seconds** — not the full 45-second turn timer. For an active player the window is effectively 0 (next command fails immediately).
 
 - **Gateway must maintain an in-memory connection registry** keyed by `player_id` → `[]WebSocket`, so that on Pub/Sub receipt, it can efficiently find all connections for a given player. This registry is per-instance and in-memory only — it is not persisted or shared.
 
