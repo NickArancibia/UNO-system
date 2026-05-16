@@ -12,6 +12,7 @@ This document records all assumptions made during the domain design phase and op
 - **Client push mechanism**: the system assumes a persistent server-to-client push channel (e.g., SSE or equivalent) for real-time game state updates. The exact protocol is deferred to the next design iteration.
 - **Reconnection state sync**: on reconnection, a client is assumed to receive a full current-state snapshot followed by a replay of any events it missed. Delivery of this snapshot is assumed to be reliable (retried until acknowledged by the client).
 - **Clock skew**: all timestamps used for timer resolution (Uno! window, Wild Draw Four window, turn timer, reconnection window) are **server-generated**. Client clocks are not trusted.
+- **Finish timestamps**: all `finish_timestamp` values (recorded when a player empties their hand) use a **server-side monotonic clock** relative to the game start time. This ensures that finish times are strictly ordered and immune to clock adjustments. Non-podium players in tournament games receive a `finish_timestamp` equal to the 20-minute match hard timeout; non-podium players in casual games receive a maximum sentinel value.
 
 ---
 
@@ -190,7 +191,7 @@ When a player logs in from a new device:
 |---|---|---|
 | R1 | Casual tiebreak: shared position vs. randomized | **Randomized** — tied players (equal points and card count) are assigned distinct positions randomly. No shared-position concept in rankings or Elo. |
 | R2 | Tournament match format: best-of-three vs. fixed three games | **Best-of-Three (Bo3)** — up to 3 games are played; the match ends early if any player reaches 2 game wins, otherwise it ends after Game 3. |
-| R3 | Tournament advancement criterion: game wins vs. cumulative points | **Match wins first**. Advancement uses game wins, then tie-breaks by lower cumulative card-point burden (sum of remaining card values as non-negative totals), then lower cumulative cards remaining. |
+| R3 | Tournament advancement criterion: game wins vs. cumulative points | **Match wins first**. Advancement uses game wins, then tie-breaks by lower cumulative card-point burden (sum of remaining card values as non-negative totals), then lower cumulative finish time (sum of `finish_timestamp` values across match games). Non-podium players contribute the 20-minute match timeout for unplaced games. |
 | R4 | Voluntary disconnect handling | **60-second reconnection window** applies to all disconnections regardless of whether voluntary or involuntary. Immediate forfeit requires an explicit forfeit command. |
 | R5 | No-show handling in Round 2+ tournament lobbies | Same rule as Round 1 applies to all rounds: absent player is treated as forfeited before the game starts. |
 | R6 | Wild Draw Four challenge hand reveal | Hand is **never revealed** to any player during the game. Verification is server-side only; hand composition appears in the post-game public log. |

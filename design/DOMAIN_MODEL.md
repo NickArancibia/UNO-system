@@ -28,6 +28,8 @@ The authoritative owner of all in-game state for a single game. This is the most
 - `active_stack_penalty` — accumulated Draw Two penalty (0 when no stack is active)
 - `challenge_window` — optional `ChallengeWindow` value object (null when no window is open)
 - `afk_counters` — map of player_id → consecutive expired turn count
+- `placements` — list of `GamePlacement` value objects recorded so far (grows from 0 to up to 3 during the game)
+- `game_start_time` — server-side monotonic clock reference for computing `finish_timestamp` values
 
 **Key invariants:**
 1. `state_version` is strictly monotonic; no two accepted commands produce the same version.
@@ -37,8 +39,8 @@ The authoritative owner of all in-game state for a single game. This is the most
 5. Jump-in is only valid if the submitted card is identical (color + rank/symbol) to the top of `discard_pile`, and the submitter is not the player who just played that card.
 6. At most one Uno! challenge and one Wild Draw Four challenge may be open simultaneously (the combined window).
 7. When a challenge window is open, only the eligible challenger(s) may submit challenge actions.
-8. The game ends immediately when any player's hand reaches zero cards.
-9. A forfeited player's hand is discarded; they are removed from `players`; turn order adjusts around them.
+8. When a player's hand reaches zero cards, all card effects resolve first (Draw Two draws, Skip, Reverse, WD4 draws), then the player is removed from the turn cycle and a `PlayerPlaced` event is emitted with their position and `finish_timestamp`. The game ends immediately when `placements.size == 3` or only 1 active player remains. On game end, `GameCompleted` is emitted with all placements and final rankings.
+9. A forfeited player's hand is discarded; they are removed from `players`; turn order adjusts around them. Forfeited players do not receive a placement — they are ranked below all non-forfeited players in the final `GameCompleted` payload.
 10. If a forfeit leaves 1 active player, that player wins immediately (`GameCompleted`). Because commands are serialized, reaching 0 active players through the forfeit path is unreachable — the last-player-wins rule always fires first. The `void` outcome applies only to admin-initiated `VoidGameResult` on an already-completed game.
 11. All random outcomes (shuffle, deal, draw) are generated server-side and appended to the event log before being broadcast.
 
@@ -90,8 +92,8 @@ Tracks the Best-of-Three series played within a single tournament room. Coordina
 1. A match contains at most 3 games.
 2. The match ends immediately when any player reaches `match_wins = 2` (early end).
 3. If no player reaches 2 wins after Game 2, Game 3 is always played.
-4. When `timeout_deadline` is reached during an active game, that game is resolved immediately using current hands (lowest card-point burden → fewest cards remaining → random tiebreak); the match then ends.
-5. Match standings are recomputed after every completed game; `match_wins`, `cumulative_card_point_burden`, and `cumulative_cards_remaining` are always consistent with completed game results.
+4. When `timeout_deadline` is reached during an active game, that game is resolved immediately using current hands (lowest card-point burden → fewest cards remaining → random tiebreak). No placements with `finish_timestamp` are awarded — all players receive the timeout sentinel timestamp. The match then ends.
+5. Match standings are recomputed after every completed game; `match_wins`, `cumulative_card_point_burden`, and `cumulative_finish_time` are always consistent with completed game results.
 6. A forfeited player's `match_standing` is frozen at the time of forfeit; they rank below all non-forfeited players regardless of standing.
 7. If forfeits reduce active players to 1, remaining games are not played; that player wins the match unconditionally.
 
@@ -180,7 +182,7 @@ Manages the single active session per player, JWT validity, and reconnection win
 
 **Key invariants:**
 1. At most one session is valid per player at any time.
-2. A new login sets `valid_sessions_from` to the current timestamp, invalidating all prior tokens.
+2. A new login first issues a new JWT (establishing the new session), then sets `valid_sessions_from` to the new token's `issued_at` timestamp and emits `SessionInvalidated` for all prior tokens. The new session is always established before the old one is invalidated — there is no window in which the player holds no valid token.
 3. When a session is invalidated while the player is in an active game, a `ReconnectionWindow` (60s) is created immediately.
 4. If the `ReconnectionWindow` expires without reconnection, a forfeit is automatically issued for the player's active game(s).
 5. Reconnection is complete only when the session is re-established **and** game state is fully synchronized.
@@ -250,8 +252,8 @@ Value objects have no identity; they are defined entirely by their attributes an
 | `Card` | `color: Red\|Green\|Blue\|Yellow\|None`, `type: Number\|Skip\|Reverse\|DrawTwo\|Wild\|WildDrawFour`, `value: 0–9\|20\|50` | `GameSession`, `PlayerHand` | Immutable; two cards are equal iff all fields match |
 | `TurnState` | `current_player_id`, `direction`, `active_color`, `state_version` | `GameSession` | Snapshot of turn context for a given state version |
 | `ChallengeWindow` | `type: Uno\|WildDrawFour\|Combined`, `opened_at`, `duration_ms`, `paused_remaining_ms`, `uno_eligible_challengers: List<player_id>` *(all opponents; populated on Uno and Combined)*, `wd4_eligible_challenger: player_id` *(next player in turn order; populated on WD4 and Combined only)* | `GameSession` | Encapsulates timer logic for all challenge window types; supports pause/resume for the combined window. The two eligibility fields are mutually exclusive in a pure Uno or WD4 window, but both are populated on a Combined window — each controls who may issue which specific challenge command. |
-| `MatchStanding` | `player_id`, `match_wins`, `cumulative_card_point_burden`, `cumulative_cards_remaining`, `forfeited: bool`, `forfeit_timestamp` | `Match` | Complete data needed to determine room placement and advancement; fully reproducible from completed game results |
-| `GamePlacement` | `player_id`, `rank`, `game_score`, `cards_remaining` | `MatchGame`, `GameSession` | Final result for one player in one game |
+| `MatchStanding` | `player_id`, `match_wins`, `cumulative_card_point_burden`, `cumulative_finish_time`, `forfeited: bool`, `forfeit_timestamp` | `Match` | Complete data needed to determine room placement and advancement; fully reproducible from completed game results. `cumulative_finish_time` is the sum of `finish_timestamp` values across all games; non-podium games contribute the 20-minute match timeout (tournament) or max sentinel (casual). |
+| `GamePlacement` | `player_id`, `rank` (1–3 for podium, 4+ for non-placed), `game_score`, `cards_remaining`, `finish_timestamp` (null for non-podium) | `MatchGame`, `GameSession` | Final result for one player in one game. Podium players (rank 1–3) have `cards_remaining: 0`, `game_score: 0`, and a non-null `finish_timestamp`. Non-podium players have `finish_timestamp: null` (sentinel applied at match level). |
 | `Placement` | `player_id`, `rank`, `scope: game\|room\|tournament` | `GameSession`, `Match`, `Tournament` | Scoped ranking result; scope disambiguates usage |
 | `EloRating` | `value`, `k_factor_tier: provisional\|established\|veteran` | `EloRecord` | K-factor tier derived from `EloRecord.games_played`: <20 → 32, 20–99 → 16, 100+ → 12 (casual); always 40 (tournament) |
 | `PlayerStats` | `total_games_played` (casual + tournament), `casual_wins`, `cumulative_points`, `tournaments_won` | `PlayerProfile` | Aggregate statistics for the player's public profile. `total_games_played` counts all completed games regardless of type; it is distinct from `EloRecord.games_played`, which counts only completed casual games and drives the K-factor tier. |
@@ -296,7 +298,7 @@ Spectator View is a projection context — it owns no aggregates. Its DDD artifa
 
 | Read Model | Built from events | Fields exposed | Fields withheld |
 |---|---|---|---|
-| `PublicGameView` | `GameStarted`, `CardPlayed`, `CardDrawn`, `TurnAdvanced`, `DirectionReversed`, `PlayerSkipped`, `DrawTwoActivated`, `DrawTwoStacked`, `JumpInOccurred`, `RaceResolved`, `PenaltyCardsDrawn`, `DrawPileReplenished`, `ChallengeWindowOpened`, `ChallengeWindowClosed`, `UnoCallMade`, `UnoChallengeResolved`, `WildDrawFourActivated`, `WildDrawFourChallengeResolved`, `PlayerDisconnected`, `PlayerReconnected`, `PlayerForfeited`, `GameCompleted` | Player names, hand counts (per player), discard pile (full history + top card), draw pile size, turn order, current direction, active color, current player, scores, all game events | Card identities in any player's hand; WD4 accused player's hand composition (until post-game) |
+| `PublicGameView` | `GameStarted`, `CardPlayed`, `CardDrawn`, `TurnAdvanced`, `DirectionReversed`, `PlayerSkipped`, `DrawTwoActivated`, `DrawTwoStacked`, `JumpInOccurred`, `RaceResolved`, `PenaltyCardsDrawn`, `DrawPileReplenished`, `ChallengeWindowOpened`, `ChallengeWindowClosed`, `UnoCallMade`, `UnoChallengeResolved`, `WildDrawFourActivated`, `WildDrawFourChallengeResolved`, `PlayerDisconnected`, `PlayerReconnected`, `PlayerForfeited`, `PlayerPlaced`, `GameCompleted` | Player names, hand counts (per player), discard pile (full history + top card), draw pile size, turn order, current direction, active color, current player, scores, all game events, placement announcements (position + finish_timestamp as they happen) | Card identities in any player's hand; WD4 accused player's hand composition (until post-game) |
 | `PublicGameLog` | All `GameCompleted` events + full event history | Everything in `PublicGameView` plus: card identities for all draws and plays, WD4 accused hand composition, final standings | Nothing — full log is public post-game |
 | `BracketView` | `RoundStarted`, `TournamentRoomAssigned`, `MatchStarted`, `MatchCompleted`, `AdvancementResolved`, `TournamentCompleted` | Tournament structure, round number, room assignments (player names), match status, qualifier results per room, current round progress | Individual game scores mid-match (only final match standings are shown) |
 | `SpectatorRoomList` | `RoomCreated`, `RoomStatusChanged`, `PlayerAssignedToRoom`, `GameStarted`, `GameCompleted` | Room ID, room type, status, player count, spectator count | Player hand information |

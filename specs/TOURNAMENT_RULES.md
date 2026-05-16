@@ -48,10 +48,11 @@ The full table for maximum scale (1,000,000 players) is:
 
 ## 3. Match Format in Tournaments
 
-Each room plays a **Best-of-Three (Bo3) match**: up to 3 individual games with the same players. Each individual game uses the same win condition as casual:
+Each room plays a **Best-of-Three (Bo3) match**: up to 3 individual games with the same players. Each individual game uses the multi-placement rules (see [RULESET.md — Section 10](./RULESET.md)):
 
-- A player wins a **game** by being the first to **empty their hand** (play their last card). There is no point-threshold win condition.
-- The winner receives **0 points** for that game; all other players receive a negative score equal to the sum of card values remaining in their hand (see [RULESET.md — Section 9](./RULESET.md)).
+- A player wins a **game** by being the first to **empty their hand**. The game then continues to determine 2nd and 3rd place (each with a `finish_timestamp`).
+- The winner receives **0 points** for that game; all other players receive a negative score equal to the sum of card values remaining in their hand at game end (see [RULESET.md — Section 9](./RULESET.md)). Placed players (1st–3rd) have 0 points.
+- Non-podium players receive a `finish_timestamp` equal to the 20-minute match hard timeout.
 
 The match proceeds as follows:
 1. All active players start with `match_wins = 0`.
@@ -72,6 +73,7 @@ The match proceeds as follows:
   1. **Highest point total** (closest to 0) → best finish in that game.
   2. Tiebreak (equal points): **fewest cards remaining in hand** → ranks higher.
   3. Second tiebreak (equal cards and points): **randomized** among the tied players.
+- No placements with `finish_timestamp` are awarded in a timeout-resolved game — all players receive the timeout sentinel timestamp.
 - The timeout-resolved first-place player is treated as that game's winner and receives the corresponding match win.
 - After timeout handling, the match ends immediately. Advancement is then determined normally from match wins and Section 4 tie-breaks using the games that were completed (including timeout-resolved games).
 
@@ -82,8 +84,9 @@ The match proceeds as follows:
 - The **top 3 players by final room ranking** advance to the next round.
 - Final room ranking is determined by:
   1. **Higher match wins** across the Bo3 match (`match_wins`) → ranks higher.
-  2. If tied on match wins: **lower cumulative card-point total** across the tied players' match games → ranks higher. For this tie-break, card-point total means the non-negative card-value burden (e.g., a game score of `-22` contributes `22`).
-  3. If still tied: **lower cumulative cards remaining** across those match games → ranks higher.
+  2. If tied on match wins: **lower cumulative card-point total** across the tied players' match games → ranks higher. For this tie-break, card-point total means the non-negative card-value burden (e.g., a game score of `−22` contributes `22`). Card-point burden is calculated from cards in hand at game end (placed players = 0).
+  3. If still tied: **lower cumulative finish time** across those match games → ranks higher. Each player's `finish_timestamp` per game (server-side monotonic clock, recorded when the player empties their hand) is summed across all games in the match. Players who did not place in a game contribute the match hard timeout value (20 minutes) for that game.
+  4. If still tied after all three criteria: **server-side random** (uniform distribution among tied players). The random seed is derived from the match metadata (match_id, room_id) and is recorded in the `MatchCompleted` event for auditability.
 - **Partial rooms**: if a room ends with **3 or fewer active players** (due to forfeits or disconnections during the match), all active players advance regardless of match wins or tie-break metrics. Forfeited players are never counted as "active" for this purpose and always rank below active players.
 - Players eliminated from the tournament may freely **spectate any active room** in the current or subsequent rounds.
 
@@ -162,9 +165,9 @@ Tournament disconnection follows the same rules as casual games ([CONSTRAINTS.md
 
 | Rule | Casual | Tournament |
 |---|---|---|
-| Win condition (game) | First to empty hand | First to empty hand |
+| Win condition (game) | First to empty hand; game continues for 2nd/3rd placement | First to empty hand; game continues for 2nd/3rd placement |
 | Match format | Single game | Best-of-Three (Bo3), up to 3 games; match may end early when any player reaches 2 game wins |
-| Advancement | N/A | Top 3 per room by match wins; ties break by lower cumulative card-point total, then lower cumulative cards; all active players if ≤3 remain |
+| Advancement | N/A | Top 3 per room by match wins; ties break by lower cumulative card-point total, then lower cumulative finish time; all active players if ≤3 remain |
 | Match timeout | None | 20 minutes per match |
 | Timeout resolution | N/A | Active game: most points → fewest cards → randomized; then room ranking by match wins and advancement tie-breaks |
 | Forfeit consequence | Lose the game | Permanently eliminated from tournament |

@@ -50,6 +50,7 @@ All domain events are delivered with **at-least-once** semantics. Every consumer
 | Event | Producer | Consumers | Dedup strategy at consumer |
 |---|---|---|---|
 | `GameCompleted` | Room Gameplay | Ranking, Tournament Orchestration, Spectator View | Keyed by `game_id`; consumer checks whether this game has already been processed before applying changes |
+| `PlayerPlaced` | Room Gameplay | Spectator View, Tournament Orchestration | Keyed by `game_id` + `player_id`; each player places at most once per game; duplicate delivery is a no-op |
 | `MatchCompleted` | Tournament Orchestration | TournamentRound, Spectator View | Keyed by `match_id` |
 | `TournamentCompleted` | Tournament | Ranking, Spectator View | Keyed by `tournament_id`; Elo update applied once per tournament per player |
 | `TournamentCancelled` | Moderation → Tournament | Ranking, Spectator View | Keyed by `tournament_id`; revert is idempotent (tracks reverted game IDs) |
@@ -184,7 +185,7 @@ Step 4: Tournament Orchestration receives PlayerBanned [Tournament Orchestration
 | Cards must be legal plays | Legal play validation before state change; WD4 hand check performed server-side |
 | `state_version` is strictly monotonic | Single-threaded command processing per game; version incremented atomically with state change |
 | At most one challenge per window | `ChallengeWindow` tracks whether a challenge has been issued; second challenge rejected |
-| Game ends immediately when a hand reaches zero | Post-play check after every `PlayCard`; `GameCompleted` is emitted before `TurnAdvanced` if the condition is met |
+| Game ends immediately when a hand reaches zero | Post-play check after every `PlayCard`; card effects resolve; if hand is empty, `PlayerPlaced` emitted; if 3 placements or 1 active player remains, `GameCompleted` is emitted |
 | Forfeited players cannot act | `PlayerHand` removed from `GameSession` on forfeit; all subsequent commands from that player_id rejected |
 
 ### 4.2 Room
@@ -283,6 +284,7 @@ Read models in Spectator View are eventually consistent. The following procedure
 | Context | Dedup cache scope | Suggested TTL |
 |---|---|---|
 | GameSession command idempotency | Per `game_id` + `idempotency_key` | Duration of game + 24h buffer |
+| GameSession `PlayerPlaced` dedup | Per `game_id` + `player_id` | Duration of game + 24h buffer |
 | Ranking `EloUpdated` dedup (casual, `game_type: casual`) | Per `game_id` | Permanent (game results never expire) |
 | Ranking `EloUpdated` dedup (tournament, `game_type: tournament`) | Per `tournament_id` | Permanent |
 | Ranking `EloReverted` dedup | Per `game_id` + `tournament_id` | Permanent |

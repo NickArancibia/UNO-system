@@ -8,9 +8,9 @@ This is the authoritative ubiquitous language for the UnoArena platform. All des
 
 | Term | Definition |
 |---|---|
-| `game` | A single UNO session played to completion: cards are dealt once, players take turns until one player empties their hand (or a terminal exception applies). A game has one winner. The atomic unit of play. |
+| `game` | A single UNO session played to completion: cards are dealt once, players take turns until 3 placements are recorded or only 1 active player remains (see RULESET.md Section 10). The first player to empty their hand is the game winner (1st place); play continues to determine 2nd and 3rd place. The atomic unit of play. Casual Elo is updated per completed game. |
 | `match` | A Best-of-Three (Bo3) series of up to 3 games played by the same set of players within a single tournament room. A match ends early the moment any player reaches 2 game wins; otherwise it ends after Game 3. Matches exist only in tournament rooms. |
-| `round` | One elimination tier within a tournament. All active tournament players are redistributed into new rooms and play a full match. The top 3 per room advance. A tournament consists of sequential rounds until 10 or fewer players remain. |
+| `round` | One elimination tier within a tournament. All active tournament players are redistributed into new rooms and play a full match. The round does not close until all rooms in the tier have produced a result. The top 3 per room advance. A tournament consists of sequential rounds until 10 or fewer players remain. |
 | `tournament` | A full multi-round elimination competition, starting from up to 1,000,000 registered players and concluding with a single Final Room whose winner is the Tournament Champion. |
 | `room` | The runtime container that groups players for either a casual game or a tournament match. A room has a lifecycle (see Section 4) and holds both active players and spectators. Rooms are created by the matchmaking system, never by players. |
 | `Final Room` | The single room created when 10 or fewer players remain in a tournament. The winner of the Final Room is the Tournament Champion. |
@@ -56,6 +56,8 @@ This is the authoritative ubiquitous language for the UnoArena platform. All des
 | `combined window` | The merged 5-second window that applies when a Wild Draw Four is a player's second-to-last card. Both the Uno! challenge and the Wild Draw Four challenge are resolved within this single window. |
 | `Wild Draw Four challenge` | An action by the next player in turn order, submitted within the challenge window, asserting that the player who played the Wild Draw Four held at least one card matching the active color at the time of play. |
 | `draw pile exhaustion` | The state where the draw pile is empty and must be replenished by reshuffling the discard pile (minus the top card) before a draw can proceed. |
+| `finish_timestamp` | A server-side monotonic clock value recorded at the moment a player empties their hand (reaches 0 cards) during a game. Used to compute `cumulative finish time` for tournament tie-breaking. Non-podium players receive a sentinel value: 20 minutes (match hard timeout) in tournament games, maximum value in casual games. |
+| `podium` | The set of up to 3 players who emptied their hand during a game, receiving 1st, 2nd, and 3rd place respectively. In a 2-player game only 1st place exists; in a 3-player game only 1st and 2nd exist. Placed players are removed from the turn cycle after their card effects resolve. |
 
 ---
 
@@ -97,9 +99,9 @@ This is the authoritative ubiquitous language for the UnoArena platform. All des
 | `game score` | The numeric score a player receives at the end of a game. The winner receives 0. All others receive a negative value equal to the sum of card values remaining in their hand (number cards at face value; Skip/Reverse/Draw Two at −20; Wild/Wild Draw Four at −50). |
 | `card-point burden` | The non-negative version of a player's game score used in tournament tie-breaking: the absolute sum of remaining card values. A game score of −22 yields a card-point burden of 22. Preferred term when discussing tie-breaks to avoid sign confusion. |
 | `cumulative card-point burden` | The sum of a player's card-point burdens across all games played in a match. Used as the first tie-breaker when players are equal on match wins. |
-| `cumulative cards remaining` | The sum of cards remaining in a player's hand across all games played in a match. Used as the second tie-breaker when players are equal on both match wins and cumulative card-point burden. |
+| `cumulative finish time` | The sum of a player's `finish_timestamp` values across all games played in a match. Used as the second tie-breaker when players are equal on both match wins and cumulative card-point burden. Players who did not place in a game contribute the 20-minute match hard timeout (tournament) or a maximum sentinel value (casual) for that game. |
 | `match wins` | The count of individual games won by a player within a match. The primary ranking criterion for tournament advancement. |
-| `placement` | A player's ordered finish rank within a specific scope: `game placement` (1st through last within a single game), `room placement` (final standing in a room after a match), `tournament placement` (1st = champion, down to all Round 1 eliminees). |
+| `placement` | A player's ordered finish rank within a specific scope: `game placement` (1st through 3rd within a single game, recorded when a player empties their hand; each carries a `finish_timestamp`), `room placement` (final standing in a room after a match), `tournament placement` (1st = champion, down to all Round 1 eliminees). |
 | `advancement` | Qualification from the current tournament round into the next. The top 3 players by room placement advance. If 3 or fewer active players remain, all advance unconditionally. |
 | `casual Elo` | The global Elo rating that applies exclusively to casual (Quick Play) games. Starting value: 1,000. Updated after each completed casual game. |
 | `tournament-placement Elo` | The separate Elo rating that applies exclusively to tournament participation. Starting value: 1,000. Updated once after the entire tournament concludes. |
@@ -140,7 +142,7 @@ These clarifications exist because certain terms are used differently in casual 
 
 | Potentially ambiguous term | Correct usage in this domain |
 |---|---|
-| "win" / "winner" | Always qualify the scope: **game win** (first to empty hand in a single game), **match win** (a game win credited toward Bo3 standing), **room qualifier** (one of the top 3 players advancing from a tournament room — NOT called a "winner"), **Tournament Champion** (winner of the Final Room). Never use "win" or "winner" unqualified. In tournament rooms, the players who advance are **qualifiers**, not winners. |
+| "win" / "winner" | Always qualify the scope: **game win** (first to empty hand in a single game — 1st place), **match win** (a game win credited toward Bo3 standing), **room qualifier** (one of the top 3 players advancing from a tournament room — NOT called a "winner"), **Tournament Champion** (winner of the Final Room). Never use "win" or "winner" unqualified. In tournament rooms, the players who advance are **qualifiers**, not winners. A game now has up to 3 **placements** (podium), but only one **winner**. |
 | "score" | Ambiguous alone. Use **game score** (0 or negative, per game) or **card-point burden** (non-negative, for tie-breaking). Never use "score" to mean Elo or placement. |
 | "points" | In game context: card point values (face value, 20, or 50). In Elo context: Elo delta. Always qualify. |
 | "round" | In game context, there are no rounds within a single game. "Round" refers exclusively to a tournament elimination tier. |

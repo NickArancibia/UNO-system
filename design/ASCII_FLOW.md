@@ -227,15 +227,25 @@ t=0                    t=5s (or earlier)       t=5s+resolve+45s
                        └── Window expires unchallenged
                            ──▶ (EVT: ChallengeWindowClosed) — no penalty
 
-                                                            │
-                                          {POL: is it last card?}
-                                          └── YES ──▶ (EVT: GameCompleted)
-                                                              │
-                                                    ~~▶ [RM: PublicGameLog sealed]
-                                                    ~~▶ {POL: casual game?}
-                                                         └── YES ──▶ EloUpdated ×N
-                                                    ~~▶ {POL: tournament game?}
-                                                         └── YES ──▶ MatchWinAwarded
+                                                             │
+                                           {POL: is it last card?}
+                                           └── YES ──▶ card effects resolve first
+                                                          │
+                                                 (EVT: PlayerPlaced)
+                                                 player removed from turn cycle
+                                                 position: 1st/2nd/3rd
+                                                 finish_timestamp recorded
+                                                          │
+                                               {POL: 3 placements OR 1 player left?}
+                                               ├── YES ──▶ (EVT: GameCompleted)
+                                               │               │
+                                               │     ~~▶ [RM: PublicGameLog sealed]
+                                               │     ~~▶ {POL: casual game?}
+                                               │          └── YES ──▶ EloUpdated ×N
+                                               │     ~~▶ {POL: tournament game?}
+                                               │          └── YES ──▶ MatchWinAwarded
+                                               │
+                                               └── NO  ──▶ game continues; (EVT: TurnAdvanced)
 
 [CMD: DrawCard] ──────────────────────────────────────────────────────────────────────────────────────▶
                   (EVT: CardDrawn)
@@ -309,8 +319,8 @@ t=0                    t=5s (or earlier)       t=5s+resolve+45s
                                             │
                                      (EVT: MatchCompleted)
                                             │
-                                     ~~▶ (EVT: AdvancementResolved)
-                                     top 3 qualify; rest eliminated
+                                      ~~▶ (EVT: AdvancementResolved)
+                                      top 3 qualify (by match wins → card-point burden → cumulative finish time); rest eliminated
                                             │
                                      {POL: all rooms in round done?}
                                      └── YES ──▶ (EVT: RoundCompleted)

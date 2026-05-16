@@ -77,7 +77,7 @@ The matchmaking system assembles rooms from the Quick Play queue. Rooms are not 
 
 - When a player forfeits, **their hand is discarded** and removed from the game. Their cards are not scored.
 - The game continues normally with the remaining players.
-- If a forfeit leaves only **1 active player** in the room, that player is declared the **winner of the current game** immediately. No further rounds are started.
+- If a forfeit leaves only **1 active player** in the room, that player is declared the **winner of the current game** immediately. No further rounds are started. Any remaining unclaimed placements are not awarded.
 - A forfeit cannot leave **0 active players** through normal gameplay: because all game commands are serialized by state version, the last-player-wins rule above fires before any subsequent forfeit can be processed. There is no 0-player game state reachable via forfeits. A game may only be voided by an admin action (`VoidGameResult`), in which case no scores are recorded and no Elo changes are applied to any player.
 
 ### 2.7 Room Lifecycle States
@@ -94,13 +94,14 @@ The matchmaking system assembles rooms from the Quick Play queue. Rooms are not 
 
 ## 3. Game Format — Casual
 
-- A casual game runs continuously until one player empties their hand. Cards are dealt once at the start; the draw pile is replenished from the discard pile as needed (see [RULESET.md — Section 11](./RULESET.md)) but there is no re-deal between rounds.
-- The player who empties their hand wins the game and receives **0 points**. All other players receive a negative score equal to the sum of card values remaining in their hand (see [RULESET.md — Section 9](./RULESET.md)).
-- Players are ranked from highest (0 points, the winner) to lowest (most negative). There is no cumulative point threshold — emptying your hand is the only way to win.
-- **Tiebreak for equal point totals** (non-winner positions):
+- A casual game runs continuously until 3 placements are recorded or only 1 active player remains (see [RULESET.md — Section 10](./RULESET.md) for multi-placement rules). Cards are dealt once at the start; the draw pile is replenished from the discard pile as needed (see [RULESET.md — Section 11](./RULESET.md)) but there is no re-deal between rounds.
+- The player who empties their hand first is the **game winner** (1st place) and receives **0 points**. The game continues to determine 2nd and 3rd place. All placed players receive **0 points**.
+- Non-placed players receive a negative score equal to the sum of card values remaining in their hand at game end (see [RULESET.md — Section 9](./RULESET.md)).
+- Players are ranked: placed players first (1st–3rd), then non-placed players by score (closest to 0 = better), then forfeited players last.
+- **Tiebreak for equal point totals** (non-placed positions):
   1. **Fewest cards remaining** → ranks higher.
   2. **Still tied**: ranking among tied players is **randomized**.
-- There is no maximum game duration for casual games.
+- There is no maximum game duration for casual games. Non-podium players in casual games receive a `finish_timestamp` set to a maximum sentinel value (not the 20-minute tournament timeout).
 
 ---
 
@@ -130,7 +131,7 @@ The matchmaking system assembles rooms from the Quick Play queue. Rooms are not 
 ### 4.3 Spectator View
 
 - Spectators see the **same view as players** with one exception: spectators **cannot see any player's hand** (card identities).
-- Spectators **can** see all hand counts, the discard pile, turn order, scores, and all game events.
+- Spectators **can** see all hand counts, the discard pile, turn order, scores, all game events, and **placement announcements** as they happen (1st, 2nd, 3rd with `finish_timestamp`).
 - Spectators **cannot** interact with the game in any way.
 - Spectators may join any game at any time, including mid-game.
 - There is **no limit** on the number of spectators per room.

@@ -25,7 +25,7 @@ Play one card from the player's hand onto the discard pile. For Wild and Wild Dr
 | **Preconditions** | Game is `in_progress`; it is the player's turn; no challenge window is open blocking their action; the card is in the player's hand; the card is a legal play; for Wild/WD4: `declared_color` is present and is a valid color (Red, Green, Blue, Yellow) |
 | **Rejection reasons** | Not the player's turn; card not in hand; illegal play (color/rank mismatch and not Wild/WD4); WD4 played while holding a matching active-color card; Wild or WD4 played without a `declared_color`; game not in `in_progress`; challenge window is open and this action is not permitted during it; stale state version |
 | **Concurrency** | `[stale-version]` `[idempotent]` |
-| **Produces** | `CardPlayed` → conditionally: `ColorDeclared` (Wild/WD4, using `declared_color` from this command), `DirectionReversed` (Reverse), `PlayerSkipped` (Skip), `DrawTwoActivated` (Draw Two), `WildDrawFourActivated` (WD4), `ChallengeWindowOpened` (second-to-last card or WD4), `TurnAdvanced`, `GameCompleted` (last card) |
+| **Produces** | `CardPlayed` → conditionally: `ColorDeclared` (Wild/WD4, using `declared_color` from this command), `DirectionReversed` (Reverse), `PlayerSkipped` (Skip), `DrawTwoActivated` (Draw Two), `WildDrawFourActivated` (WD4), `ChallengeWindowOpened` (second-to-last card or WD4), `TurnAdvanced`, `PlayerPlaced` (hand reaches 0 — card effects resolve first, then player removed from turn cycle; game continues), `GameCompleted` (hand reaches 0 AND either 3 placements recorded or only 1 active player remains) |
 
 #### `DrawCard`
 Draw one card from the draw pile and end the turn.
@@ -125,7 +125,7 @@ Voluntarily and permanently leave the current game.
 | **Preconditions** | Player is an active (non-forfeited) participant in the game |
 | **Rejection reasons** | Player already forfeited; player not in this game |
 | **Concurrency** | `[idempotent]` — duplicate forfeit submissions return original outcome |
-| **Produces** | `PlayerForfeited` → conditionally: `GameCompleted` (1 player left — that player wins), or game continues (2+ players left) |
+| **Produces** | `PlayerForfeited` → conditionally: `GameCompleted` (1 player left — that player wins, remaining unclaimed placements not awarded), or game continues (2+ players left) |
 
 ---
 
@@ -369,7 +369,7 @@ Mark a game for admin review.
 | `DrawPileReplenished` | `GameSession` | `game_id`, `cards_reshuffled_count`, `state_version` | Spectator View |
 | `TurnAdvanced` | `GameSession` | `game_id`, `next_player_id`, `direction`, `state_version` | Spectator View |
 | `DirectionReversed` | `GameSession` | `game_id`, `new_direction`, `caused_by_player_id`, `state_version` | Spectator View |
-| `PlayerSkipped` | `GameSession` | `game_id`, `skipped_player_id`, `state_version` | Spectator View |
+| `PlayerSkipped` | `GameSession` | `game_id`, `skipped_player_id`, `reason: SkipCard\|StackEffect\|Disconnect`, `state_version` | Spectator View |
 | `DrawTwoActivated` | `GameSession` | `game_id`, `target_player_id`, `accumulated_penalty`, `state_version` | Spectator View |
 | `DrawTwoStacked` | `GameSession` | `game_id`, `stacking_player_id`, `accumulated_penalty`, `state_version` | Spectator View |
 | `PenaltyCardsDrawn` | `GameSession` | `game_id`, `player_id`, `count`, `reason: UnoChallenge\|WD4Effect\|WD4Challenge\|StackPenalty`, `new_hand_count`, `state_version` | Spectator View (count only, not card identities) |
@@ -386,7 +386,8 @@ Mark a game for admin review.
 | `PlayerDisconnected` | `GameSession` | `game_id`, `player_id`, `reconnection_window_expires_at` | Spectator View, Tournament Orchestration |
 | `PlayerReconnected` | `GameSession` | `game_id`, `player_id` | Spectator View |
 | `PlayerForfeited` | `GameSession` | `game_id`, `player_id`, `reason: Voluntary\|AFK\|ReconnectionExpired`, `remaining_active_players` | Spectator View, Tournament Orchestration, Ranking |
-| `GameCompleted` | `GameSession` | `game_id`, `room_id`, `placements: List<GamePlacement>`, `game_type: casual\|tournament`, `tournament_id?`, `match_id?` | Ranking (casual), Tournament Orchestration (tournament), Spectator View |
+| `GameCompleted` | `GameSession` | `game_id`, `room_id`, `placements: List<GamePlacement>` (all placed players with rank 1–3 and `finish_timestamp`), `non_placed: List<GamePlacement>` (rank 4+ with game_score and cards_remaining), `forfeited: List<player_id>`, `game_type: casual\|tournament`, `tournament_id?`, `match_id?` | Ranking (casual), Tournament Orchestration (tournament), Spectator View |
+| `PlayerPlaced` | `GameSession` | `game_id`, `player_id`, `position` (1, 2, or 3), `finish_timestamp`, `active_players_remaining`, `state_version` | Spectator View (placement announcement), Tournament Orchestration |
 
 ---
 
@@ -419,7 +420,7 @@ Mark a game for admin review.
 | `MatchEndedEarly` | `Match` | `match_id`, `winner_player_id`, `match_wins`, `games_played` | Spectator View, TournamentRound |
 | `MatchEndedAfterGame3` | `Match` | `match_id`, `final_standings: List<MatchStanding>` | Spectator View, TournamentRound |
 | `MatchTimeoutReached` | `Match` | `match_id`, `active_game_id`, `standings_at_timeout` | Spectator View, TournamentRound |
-| `MatchCompleted` | `Match` | `match_id`, `room_id`, `tournament_id`, `round_number`, `final_standings: List<MatchStanding>`, `qualifiers: List<player_id>` | TournamentRound, Spectator View |
+| `MatchCompleted` | `Match` | `match_id`, `room_id`, `tournament_id`, `round_number`, `final_standings: List<MatchStanding>`, `qualifiers: List<player_id>`, `tiebreak_used: MatchWins|CardPointBurden|CumulativeFinishTime|Random|PartialRoom` | TournamentRound, Spectator View |
 
 ---
 
@@ -504,26 +505,27 @@ PlayCard
       → [if challenged + guilty] PenaltyCardsDrawn (2 to player) → ChallengeWindowClosed
       → [if challenged + innocent] PenaltyCardsDrawn (2 to challenger) → ChallengeWindowClosed
       → [if window expires unchallenged] ChallengeWindowClosed (no penalty; player retains one-card hand)
-  → [if last card] GameCompleted
-  → [else] TurnAdvanced
+   → [if last card] PlayerPlaced (card effects resolve first; player removed from turn cycle)
+      → [if 3 placements OR 1 active player remains] GameCompleted
+      → [else] game continues; TurnAdvanced
 ```
 
 ### 3.2 Game Completion → Ranking (Casual)
 ```
 GameCompleted (game_type: casual)
   → Ranking consumes event
-  → EloUpdated (for each player, based on placement)
+  → EloUpdated (for each player, based on final ranking: placed players first, then non-placed by score, then forfeited)
 ```
 
 ### 3.3 Game Completion → Match Progression (Tournament)
 ```
 GameCompleted (game_type: tournament)
   → Match consumes event
-  → MatchWinAwarded (to game winner)
+  → MatchWinAwarded (to game winner = 1st place)
   → [if winner reaches 2 match_wins] MatchEndedEarly → MatchCompleted
   → [if Game 3 completed] MatchEndedAfterGame3 → MatchCompleted
   → MatchCompleted
-      → AdvancementResolved (top 3 qualifiers identified)
+      → AdvancementResolved (top 3 qualifiers identified by match wins → card-point burden → cumulative finish time)
       → TournamentRound accumulates qualifiers
       → [if all rooms in round done] RoundCompleted
           → [if ≤10 players remain] FinalRoomCreated
@@ -535,7 +537,7 @@ GameCompleted (game_type: tournament)
 ### 3.4 Forfeit Cascade
 ```
 PlayerForfeited
-  → [if 1 active player remains] GameCompleted (that player wins)
+  → [if 1 active player remains] GameCompleted (that player wins; unclaimed placements not awarded)
       NOTE: reaching 0 active players through forfeits is unreachable — commands are
       serialized, so the last-player-wins rule fires before a second "final" forfeit
       could be processed. GameResultVoided is emitted by Moderation only (admin-only outcome; see VoidGameResult).

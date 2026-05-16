@@ -217,8 +217,9 @@ Jump-in is an **active rule** on this platform.
 
 ## 9. Scoring
 
-- A player wins the game the moment they play their last card and hold **zero cards**. They receive **0 points**.
-- All other players receive a **negative score** equal to the sum of card values remaining in their hand at that moment:
+- The first player to play their last card and hold **zero cards** is the **game winner**. They receive **0 points** and a `finish_timestamp` is recorded (server-side monotonic clock).
+- The game **does not end** when the first player empties their hand. Play continues to determine **2nd and 3rd place** (see Section 10).
+- At the moment the game ends, all non-placed players receive a **negative score** equal to the sum of card values remaining in their hand:
 
 | Card type | Point value (deducted) |
 |---|---|
@@ -229,17 +230,45 @@ Jump-in is an **active rule** on this platform.
 | Wild | 50 points |
 | Wild Draw Four | 50 points |
 
-For example, a player holding a Red 2 and a Skip ends the game with **−22 points**.
+For example, a player holding a Red 2 and a Skip at game end has **−22 points**.
+
+Placed players (1st, 2nd, 3rd) receive **0 points** (their hand is empty).
 
 Points are used exclusively for **ranking and tiebreaking** — they do not accumulate across games to trigger a win condition.
 
 ---
 
-## 10. Winning the Game
+## 10. Winning the Game & Multi-Placement
 
-- A game ends the moment any player empties their hand. **There is no round-based structure within a single game and no cumulative point threshold.**
-- Players are ranked from best to worst by their point total: highest (closest to 0) ranks first, lowest (most negative) ranks last.
-- **Tiebreak** (two or more players with equal point totals):
+### 10.1 Game Winner
+
+- The **game winner** is the first player to empty their hand. They are recorded as **1st place** with a `finish_timestamp`.
+
+### 10.2 Continued Play After First Placement
+
+- After a player empties their hand, all **card effects resolve first** (Draw Two draws, Skip, Reverse, WD4 draws, etc.), then:
+  - The player who emptied their hand is **removed from the turn cycle**.
+  - The game continues with the remaining active players.
+- Play continues until one of the following conditions is met:
+  1. **3 players have emptied their hands** (3 placements recorded), OR
+  2. **Only 1 active player remains** (fewer than 3 placements possible).
+- Each subsequent player to empty their hand is recorded as **2nd place** and **3rd place**, each with their own `finish_timestamp`.
+- Non-podium players (those who did not empty their hand) receive a `finish_timestamp` equal to the **match hard timeout** (20 minutes for tournament) or a maximum sentinel value for casual games.
+
+### 10.3 Edge Cases
+
+- **2-player game**: only 1st place is possible (the game ends when the first player empties their hand; the other player is last by definition).
+- **3-player game**: 1st and 2nd place recorded; the remaining player is last.
+- **4+ player game**: up to 3 placements recorded; remaining players ranked by score.
+- **Forfeited players**: do not receive a placement; they are ranked below all non-forfeited players.
+
+### 10.4 Final Ranking
+
+- Players are ranked from best to worst:
+  1. **Placed players** (1st, 2nd, 3rd) — ordered by placement position.
+  2. **Non-placed non-forfeited players** — ranked by point total (closest to 0 = better).
+  3. **Forfeited players** — ranked below all non-forfeited players (by time of forfeit: earliest forfeit = lowest rank).
+- **Tiebreak for non-placed players** (equal point totals):
   1. **Fewest cards remaining in hand** → ranks higher.
   2. **Still tied**: ranking among tied players is **randomized**.
 
@@ -266,6 +295,7 @@ Points are used exclusively for **ranking and tiebreaking** — they do not accu
 | Draw Two played (no stack) | Next player draws 2 and is skipped |
 | Draw Two stacked | Penalty accumulates; chain continues; eventual victim draws total and is skipped |
 | Wild Draw Four played | Next player draws 4 and is skipped |
+| Player empties hand | Player removed from turn cycle; card effects resolve; play continues (see Section 10) |
 | Jump-in occurs | Turn order resets from the jumper; proceeding in current direction |
 | Jump-in with Reverse | Direction flips from jumper's position |
 | Jump-in with Draw Two (during stack) | Penalty +2, turn continues from jumper; original next player skipped |

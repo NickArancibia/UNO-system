@@ -140,7 +140,7 @@ Player A now holds 2 cards.
    elapsed during the Uno! window counts against B's turn)
 ```
 
-### Phase D — Game Completion
+### Phase D — Game Completion (Multi-Placement)
 
 ```
 Player A's turn again. A holds 1 card.
@@ -150,15 +150,47 @@ Player A's turn again. A holds 1 card.
                 active_color: Green, state_version: P+1}
   → ColorDeclared {player_id: A, declared_color: Green, state_version: P+1}
 
-  [SYNC] A's hand is now empty → game end condition met
-  [SYNC] Server computes final placements:
-    - A: rank 1, game_score: 0
-    - Others: ranked by game_score (most negative = last); ties broken by fewest cards, then random
+  [SYNC] A's hand is now empty → card effects resolve (none in this case)
+  [SYNC] A is removed from turn cycle; 1st placement recorded
+  → PlayerPlaced {game_id: G1, player_id: A, position: 1,
+                   finish_timestamp: <server monotonic time>,
+                   active_players_remaining: 9, state_version: P+2}
+
+  [ASYNC] Spectator View receives PlayerPlaced
+    → PublicGameView updated: A announced as 1st place
+
+  >> Game continues with remaining 9 players
+
+  >> Player B empties hand next
+  → PlayerPlaced {game_id: G1, player_id: B, position: 2,
+                   finish_timestamp: <server monotonic time>,
+                   active_players_remaining: 8, state_version: Q}
+  [ASYNC] Spectator View updated: B announced as 2nd place
+
+  >> Player C empties hand
+  → PlayerPlaced {game_id: G1, player_id: C, position: 3,
+                   finish_timestamp: <server monotonic time>,
+                   active_players_remaining: 7, state_version: R}
+
+  [SYNC] 3 placements recorded → game end condition met
+  [SYNC] Server computes final rankings:
+    - Placed: A (1st, score: 0), B (2nd, score: 0), C (3rd, score: 0)
+    - Non-placed: ranked by game_score (closest to 0 = better); ties by fewest cards, then random
+    - Forfeited: ranked below all non-forfeited (if any)
   [SYNC] Room transitions in_progress → completed
   → GameCompleted {game_id: G1, room_id: R1,
-                   placements: [{player_id: A, rank: 1, game_score: 0, cards_remaining: 0}, ...],
-                   game_type: casual,
-                   state_version: P+2}
+                    placements: [
+                      {player_id: A, rank: 1, game_score: 0, cards_remaining: 0, finish_timestamp: T1},
+                      {player_id: B, rank: 2, game_score: 0, cards_remaining: 0, finish_timestamp: T2},
+                      {player_id: C, rank: 3, game_score: 0, cards_remaining: 0, finish_timestamp: T3}
+                    ],
+                    non_placed: [
+                      {player_id: D, rank: 4, game_score: -14, cards_remaining: 2, finish_timestamp: null},
+                      ...
+                    ],
+                    forfeited: [],
+                    game_type: casual,
+                    state_version: R+1}
   → RoomCompleted {room_id: R1, final_standings: [...]}
 
 [ASYNC] Spectator View receives GameCompleted
@@ -220,9 +252,15 @@ This flow covers one full elimination round: qualifier accumulation, progressive
   >> Gameplay proceeds (same loop as Flow 1 Phase C)
 
   Player P3 empties hand first.
+  → PlayerPlaced {position: 1, player_id: P3, finish_timestamp: T_P3_G1}
+  >> P7 empties hand second, P1 empties hand third
+  → PlayerPlaced {position: 2, player_id: P7, finish_timestamp: T_P7_G1}
+  → PlayerPlaced {position: 3, player_id: P1, finish_timestamp: T_P1_G1}
   → GameCompleted {game_id: G-2-001-1, game_type: tournament,
-                   tournament_id: T1, match_id: M-2-001,
-                   placements: [{P3, rank:1}, {P7, rank:2}, ...]}
+                    tournament_id: T1, match_id: M-2-001,
+                    placements: [{P3, rank:1, finish_timestamp: T_P3_G1}, {P7, rank:2, ...}, {P1, rank:3, ...}],
+                    non_placed: [...],
+                    forfeited: []}
 
 [SYNC] Match receives GameCompleted
   → MatchWinAwarded {match_id: M-2-001, player_id: P3, match_wins_total: 1, sequence_number: 1}
@@ -246,18 +284,19 @@ This flow covers one full elimination round: qualifier accumulation, progressive
 [SYNC] Final standings computed:
   1. match_wins (P3: 2, others: 0 or 1)
   2. tie-break: cumulative card-point burden (for players tied on match_wins)
-  3. tie-break: cumulative cards remaining
+  3. tie-break: cumulative finish time (lower = better; non-podium games contribute 20 min)
   4. forfeited players ranked below all active players
 
   → MatchCompleted {match_id: M-2-001, room_id: R-2-001, tournament_id: T1,
                     round_number: 2,
                     final_standings: [
-                      {player_id: P3, match_wins: 2, burden: 0, cards: 0},
-                      {player_id: P7, match_wins: 1, burden: 15, cards: 2},
-                      {player_id: P1, match_wins: 1, burden: 22, cards: 3},
+                      {player_id: P3, match_wins: 2, burden: 0, finish_time: T_P3_G1+T_P3_G2},
+                      {player_id: P7, match_wins: 1, burden: 15, finish_time: T_P7_G1+T_P7_G2},
+                      {player_id: P1, match_wins: 1, burden: 22, finish_time: T_P1_G1+T_P1_G2},
                       ...
                     ],
-                    qualifiers: [P3, P7, P1]}
+                    qualifiers: [P3, P7, P1],
+                    tiebreak_used: MatchWins}
 
 [SYNC] Top 3 (P3, P7, P1) advance
   → AdvancementResolved {tournament_id: T1, round_number: 2, room_id: R-2-001,
@@ -325,29 +364,37 @@ This flow covers one full elimination round: qualifier accumulation, progressive
 ### Phase A — Casual Elo Update
 
 ```
+[SYNC] Abandoned game check: if the game was voided (GameResultVoided) or all non-forfeited players forfeited, no Elo update is applied. Ranking discards the event.
+
 [ASYNC] Ranking context receives:
   GameCompleted {game_id: G1, game_type: casual,
                  placements: [
-                   {player_id: A, rank: 1, game_score: 0,    cards_remaining: 0},
-                   {player_id: B, rank: 2, game_score: -14,  cards_remaining: 2},
-                   {player_id: C, rank: 3, game_score: -22,  cards_remaining: 3},
-                   {player_id: D, rank: 4, game_score: -22,  cards_remaining: 4},  ← tie on score
-                   {player_id: E, rank: 5, game_score: -55,  cards_remaining: 5, forfeited: true}
+                   {player_id: A, rank: 1, game_score: 0,    cards_remaining: 0, finish_timestamp: T1},
+                   {player_id: B, rank: 2, game_score: 0,    cards_remaining: 0, finish_timestamp: T2},
+                   {player_id: C, rank: 3, game_score: 0,    cards_remaining: 0, finish_timestamp: T3}
+                 ],
+                 non_placed: [
+                   {player_id: D, rank: 4, game_score: -14,  cards_remaining: 2, finish_timestamp: null},
+                   {player_id: E, rank: 5, game_score: -22,  cards_remaining: 3},
+                   {player_id: F, rank: 6, game_score: -22,  cards_remaining: 4},
+                   {player_id: G, rank: 7, game_score: -55,  cards_remaining: 5, forfeited: true}
                  ]}
 
-[SYNC] Ranking reads current Elo for all players from their EloRecords: A=1200, B=1050, C=1000, D=980, E=900
+[SYNC] Ranking reads current Elo for all players from their EloRecords: A=1200, B=1050, C=1000, D=980, E=950, F=900, G=880
 
-[SYNC] Forfeit check: E forfeited → assigned rank 5 (last) regardless of score
+[SYNC] Forfeit check: G forfeited → assigned rank 7 (last) regardless of score
 
-[SYNC] Actual score computed per player (S_i = (N − rank_i) / (N − 1), N=5):
-  A (rank 1): S = (5-1)/(5-1) = 1.00
-  B (rank 2): S = (5-2)/(5-1) = 0.75
-  C (rank 3): S = (5-3)/(5-1) = 0.50
-  D (rank 4): S = (5-4)/(5-1) = 0.25
-  E (rank 5): S = (5-5)/(5-1) = 0.00
+[SYNC] Actual score computed per player (S_i = (N − rank_i) / (N − 1), N=7):
+  A (rank 1): S = (7-1)/(7-1) = 1.00
+  B (rank 2): S = (7-2)/(7-1) = 0.83
+  C (rank 3): S = (7-3)/(7-1) = 0.67
+  D (rank 4): S = (7-4)/(7-1) = 0.50
+  E (rank 5): S = (7-5)/(7-1) = 0.33
+  F (rank 6): S = (7-6)/(7-1) = 0.17
+  G (rank 7): S = (7-7)/(7-1) = 0.00
 
 [SYNC] Expected score computed per player (pairwise):
-  E_A = [P(A>B) + P(A>C) + P(A>D) + P(A>E)] / 4
+  E_A = [P(A>B) + P(A>C) + P(A>D) + P(A>E) + P(A>F) + P(A>G)] / 6
         P(i>j) = 1 / (1 + 10^((R_j - R_i)/400))
   (computed for each player against all others)
 
@@ -357,32 +404,42 @@ This flow covers one full elimination round: qualifier accumulation, progressive
   C: 15 games  → K=32
   D: 8 games   → K=32
   E: 30 games  → K=16
+  F: 12 games  → K=32
+  G: 30 games  → K=16
 
 [SYNC] Points bonus check (card-point burden ≤ 80% of room average):
-  Room average burden = (0 + 14 + 22 + 22 + 55) / 5 = 22.6
-  80% threshold = 18.08
-  A: burden 0  ≤ 18.08 → +3 bonus ✓
-  B: burden 14 ≤ 18.08 → +3 bonus ✓
-  C: burden 22 > 18.08 → no bonus
-  D: burden 22 > 18.08 → no bonus
-  E: burden 55 > 18.08 → no bonus
+  Room average burden = (0 + 0 + 0 + 14 + 22 + 22 + 55) / 7 = 16.14
+  80% threshold = 12.91
+  A: burden 0  ≤ 12.91 → +3 bonus ✓
+  B: burden 0  ≤ 12.91 → +3 bonus ✓
+  C: burden 0  ≤ 12.91 → +3 bonus ✓
+  D: burden 14 > 12.91 → no bonus
+  E: burden 22 > 12.91 → no bonus
+  F: burden 22 > 12.91 → no bonus
+  G: burden 55 > 12.91 → no bonus
 
 [SYNC] Elo deltas computed: ΔR_i = K × (S_i − E_i) + bonus
-  → EloUpdated {player_id: A, old_elo: 1200, new_elo: 1200+ΔA, delta: ΔA,
-                game_id: G1, placement: 1, k_factor_used: 12, bonus_applied: true}
-  → EloUpdated {player_id: B, ...}
-  → EloUpdated {player_id: C, ...}
-  → EloUpdated {player_id: D, ...}
-  → EloUpdated {player_id: E, delta: negative (last place), bonus_applied: false}
+   → EloUpdated {player_id: A, old_elo: 1200, new_elo: 1200+ΔA, delta: ΔA,
+                 game_id: G1, placement: 1, k_factor_used: 12, bonus_applied: true}
+   → EloUpdated {player_id: B, ...}
+   → EloUpdated {player_id: C, ...}
+   → EloUpdated {player_id: D, ...}
+   → EloUpdated {player_id: E, ...}
+   → EloUpdated {player_id: F, ...}
+   → EloUpdated {player_id: G, delta: negative (last place), bonus_applied: false}
 
 [ASYNC] Spectator View receives EloUpdated events
-  → LeaderboardView updated for all 5 players
+  → LeaderboardView updated for all 7 players
 
 [SYNC] PlayerProfile.stats updated for each player (games_played +1, win recorded for A)
   → PlayerStatsUpdated {player_id: A, ...}
 ```
 
 ### Phase B — Tournament Elo Update
+
+> **Separation note:** Tournament-placement Elo is a completely separate rating from casual Elo.
+> It is not updated per game — it is updated exactly once per tournament, after `TournamentCompleted`
+> is emitted. A player's casual Elo is never touched by tournament events, and vice versa.
 
 ```
 [ASYNC] Ranking context receives:
@@ -471,6 +528,10 @@ This flow is not one of the three mandatory assignment narratives, but is includ
 
 [SYNC] Full current game state snapshot delivered to B's client
   (all events since B disconnected replayed; B's hand intact)
+  The snapshot includes: B's own hand (card identities), discard pile, draw pile size,
+  hand counts for all other players, turn order, active color, current player, scores.
+  Opponent card identities are never included — the same privacy boundary as during
+  normal play applies unconditionally, regardless of the reconnection path.
 
 [SYNC] B's AFK counter reset to 0; turns resume normally on B's next turn
 ```

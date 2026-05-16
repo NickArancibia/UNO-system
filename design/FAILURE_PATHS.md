@@ -589,3 +589,89 @@ Covered in [EVENT_FLOWS.md — Flow 4, Phase C](./EVENT_FLOWS.md).
 **Emitted events:** `CardDrawn` (filtered; `full_hand` absent from broadcast).
 
 **Invariant protected:** The ACL acts as a defense-in-depth layer — spectator privacy does not depend on upstream developers never making mistakes.
+
+---
+
+## 7. Multi-Placement Edge Cases
+
+### 7.1 Player disconnects after placing 1st — does placement stand?
+
+**Trigger:** Player A empties their hand (1st place, `PlayerPlaced` emitted), then disconnects before the game completes.
+
+**Behavior:**
+- A's placement is **immutable** once `PlayerPlaced` is emitted and appended to the event log.
+- A is removed from the turn cycle; their disconnection does not affect the ongoing game.
+- A's `ReconnectionWindow` starts, but since A is no longer in the turn cycle, there is no turn to skip and no AFK counter.
+- If A reconnects: they observe the game as a spectator (no cards, already placed).
+- If A's reconnection window expires: A is **not** forfeited from the game (placement is already recorded). A forfeit only applies to active players still in the turn cycle.
+
+**Emitted events:** `PlayerPlaced` (already emitted), `PlayerDisconnected`, `ReconnectionWindowStarted` (no forfeit consequence).
+
+**Invariant protected:** Placements are immutable once recorded; disconnection after placing does not retroactively change the game outcome.
+
+---
+
+### 7.2 Only 2 players in a room — no continued play
+
+**Trigger:** A tournament room starts with only 2 players (minimum room size).
+
+**Behavior:**
+- When one player empties their hand, only 1 active player remains.
+- Game end condition is met (`active_players_remaining == 1` after placement).
+- `PlayerPlaced {position: 1}` is emitted, followed immediately by `GameCompleted`.
+- No 2nd or 3rd placement is recorded.
+- The losing player receives a non-podium `finish_timestamp` (20-minute match timeout).
+
+**Emitted events:** `PlayerPlaced {position: 1}`, `GameCompleted`.
+
+**Invariant protected:** The game correctly ends when only 1 active player remains, regardless of placement count.
+
+---
+
+### 7.3 Simultaneous empty-hand via Draw Two stacking
+
+**Trigger:** Players A and B each hold 1 card. Player C plays a Draw Two targeting A. A holds a Draw Two and stacks, emptying their hand. B then jump-ins with the identical Draw Two, also emptying their hand.
+
+**Behavior:**
+- Commands are serialized by `state_version`. A's stack response is processed first.
+- `PlayerPlaced {position: 1, player_id: A}` is emitted. A is removed from the turn cycle.
+- The stack continues. B's jump-in is processed next.
+- `PlayerPlaced {position: 2, player_id: B}` is emitted. B is removed.
+- The stack continues to the next player.
+
+**Emitted events:** `DrawTwoStacked`, `PlayerPlaced {position: 1}`, `PlayerPlaced {position: 2}` (serialized by state_version).
+
+**Invariant protected:** Even when multiple players empty their hand in rapid succession via stacking/jump-in, placements are strictly ordered by state_version.
+
+---
+
+### 7.4 Forfeit during continued play (after 1st place)
+
+**Trigger:** Player A has placed 1st. During continued play (determining 2nd/3rd), Player B forfeits.
+
+**Behavior:**
+- B's hand is discarded; B is removed from the turn cycle.
+- B does **not** receive a placement. B is ranked below all non-forfeited players in `GameCompleted`.
+- The game continues with remaining players. The placement counter does not advance for B.
+- If B's forfeit leaves only 1 active player (and < 3 placements recorded): game ends immediately. The sole remaining player receives the next available placement position.
+
+**Emitted events:** `PlayerForfeited`, conditionally `GameCompleted` (if 1 player left).
+
+**Invariant protected:** Forfeit removes a player without awarding a placement; placement positions are only awarded to players who actually emptied their hand.
+
+---
+
+### 7.5 Timeout reaches during continued play (after 1st or 2nd place)
+
+**Trigger:** In a tournament match, the 20-minute timeout fires during continued play after 1st place has been recorded but before 3 placements are complete.
+
+**Behavior:**
+- `MatchTimeoutReached` fires. The active game is resolved immediately using current hand state.
+- No additional `PlayerPlaced` events are emitted for the timeout resolution.
+- All remaining players (including any already-placed players) are ranked by: highest game_score → fewest cards → random.
+- Already-placed players retain their placement with their `finish_timestamp`.
+- Non-placed players receive the timeout sentinel `finish_timestamp`.
+
+**Emitted events:** `MatchTimeoutReached`, `GameCompleted` (timeout-resolved).
+
+**Invariant protected:** Timeout resolution preserves existing placements; remaining positions are resolved by score, not by play.
