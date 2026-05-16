@@ -174,7 +174,7 @@ When a player logs in from a new device:
 
 | # | Decision | Notes |
 |---|---|---|
-| 1 | Exact client connection protocol (SSE, WebSocket, long-poll, etc.) | Deferred to next design iteration per assignment scope constraints |
+| 1 | ~~Exact client connection protocol (SSE, WebSocket, long-poll, etc.)~~ | **Resolved — see R12** |
 | 2 | Cross-region matching wait duration before expanding radius | Implementation / infrastructure detail |
 | 3 | K-factor fine-tuning after launch | Can be adjusted based on observed rating distribution and inflation/deflation |
 | 4 | Matchmaking queue window duration for Quick Play | Implementation detail; affects lobby fill speed vs. Elo precision |
@@ -200,3 +200,4 @@ When a player logs in from a new device:
 | R9 | Session reconnection definition | Reconnection is complete only when session is re-established **and** game state is fully synchronized. |
 | R10 | Tournament Elo formula inputs | Formula uses final placement only. Rounds reached and win rates are profile statistics used solely to sub-order same-round eliminees for placement bucketing. |
 | R11 | Authentication mechanism | **JWT + server-side invalidation record** — JWT for stateless signature verification; one `valid_sessions_from` timestamp per player enforces single-session rule. See Section 6. |
+| R12 | Client connection protocol | **WebSocket** — primary realtime channel for both active players and spectators. WebSocket is the industry standard for turn-based card/board game platforms (Board Game Arena, Tabletop Simulator, documented card game architectures) because it provides full-duplex bidirectional communication with sub-second latency. This is required for the 5-second Uno! challenge window and for clients to submit commands and receive state updates over the same persistent connection. A long-poll fallback is acceptable for hostile network environments (strict firewalls, older mobile proxies) but WebSocket is the default. SSE alone is insufficient because it is unidirectional — clients would still need separate HTTP requests for every command, adding latency and complexity with no compensating benefit. |
