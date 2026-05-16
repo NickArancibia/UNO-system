@@ -1,6 +1,6 @@
 # UnoArena — Bounded Contexts & Context Map
 
-This document defines the six bounded contexts of UnoArena, their responsibilities, their relationships, and the events and data that cross each boundary. All terms follow [GLOSSARY.md](./GLOSSARY.md).
+This document defines the seven bounded contexts of UnoArena, their responsibilities, their relationships, and the events and data that cross each boundary. All terms follow [GLOSSARY.md](./GLOSSARY.md).
 
 ---
 
@@ -32,13 +32,26 @@ This document defines the six bounded contexts of UnoArena, their responsibiliti
         │ Spectator View │◀──match/bracket events───────────┤  match tracking,      │
         │ (read-only;    │                                  │  advancement)         │
         │  privacy ACL)  │                                  └──────────┬────────────┘
-        └────────────────┘                                             │ TournamentCompleted
-                                                                       │
-                                                          ┌────────────▼────────────┐
-                                                          │        Ranking          │
-                                                          │  (Elo updates;          │
-                                                          │   leaderboards)         │
-                                                          └─────────────────────────┘
+        └────────────────┘          game events ──────────────────────►│ TournamentCompleted
+                                    (GameCompleted,                     │ MatchCompleted
+                                     PlayerForfeited,                   │ RoundCompleted
+                                     EloUpdated)                        │ EloUpdated
+                                           │                            │
+                                           ▼                            ▼
+                                    ┌─────────────────────────────────────────┐
+                                    │           Analytics / Read Models        │
+                                    │  (player stats, bracket views,          │
+                                    │   tournament standings, leaderboards)   │
+                                    └─────────────────────────────────────────┘
+                                                       ▲
+                                    ┌──────────────────┘
+                                    │  TournamentCompleted
+                                    │
+                          ┌─────────┴───────────┐
+                          │       Ranking        │
+                          │  (Elo computation;   │
+                          │   authoritative Elo) │
+                          └─────────────────────-┘
 ```
 **Arrow guide:** `──▶` event/data flow (downstream); `◀──` corrective command issued upstream.
 
@@ -83,7 +96,7 @@ This document defines the six bounded contexts of UnoArena, their responsibiliti
 - Drives matchmaking for tournament rooms: assembles qualifiers into rooms, triggers lobby timers.
 - Tracks Bo3 match state: `match_wins`, game sequence, early-end detection (2 wins reached).
 - Applies the 20-minute match timeout: resolves the active game on timeout and freezes advancement.
-- Computes room placement using match wins → cumulative card-point burden → cumulative cards remaining.
+- Computes room placement using match wins → cumulative card-point burden → cumulative finish time.
 - Determines advancement: top 3 per room; all active players if ≤ 3 remain.
 - Handles no-show forfeits before game start and lone-qualifier auto-advancement.
 - Emits tournament-level events: `RoundStarted`, `MatchCompleted`, `AdvancementResolved`, `TournamentCompleted`.
@@ -182,7 +195,35 @@ This document defines the six bounded contexts of UnoArena, their responsibiliti
 
 ---
 
-### 2.6 Moderation / Admin
+### 2.6 Analytics / Read Models
+
+**Role:** Downstream read-only projection context. Consumes events from Room Gameplay, Tournament Orchestration, and Ranking to build and serve query-optimized read models for player statistics, tournament brackets, standings, and leaderboard display.
+
+**Responsibilities:**
+- Maintains denormalized, query-optimized read models: player statistics pages, tournament bracket trees, round-by-round standings, historical game lists, and leaderboard display views.
+- Absorbs the `GameCompleted` spike at round end (up to 100,000 events in seconds) through dedicated partitioned consumers without pushing backpressure into Room Gameplay writers.
+- Provides the bracket visualization and tournament standings views consumed by clients and the Spectator View context during live tournaments.
+- Tracks per-player historical aggregates: games played, win rate, cumulative card-point burden across matches, tournament placements history.
+- Exposes read-only query APIs (no commands accepted). All writes are driven exclusively by incoming domain events.
+
+**Does NOT own:**
+- Authoritative Elo ratings (owned by Ranking's `EloRecord` aggregate). Analytics only maintains a display copy updated from `EloUpdated` events.
+- Live game state or realtime per-turn event streams (owned by Spectator View and Room Gameplay).
+- Any write-side aggregate — this context is purely a projection / CQRS read side.
+
+**Events consumed:**
+
+| Source | Events |
+|---|---|
+| Room Gameplay | `GameCompleted`, `PlayerForfeited`, `GameResultVoided` |
+| Tournament Orchestration | `RoundStarted`, `MatchCompleted`, `AdvancementResolved`, `RoundCompleted`, `TournamentCompleted`, `TournamentCancelled` |
+| Ranking | `EloUpdated`, `TournamentEloUpdated` |
+
+**Relationship type:** Downstream conformist from all producing contexts. Applies no anti-corruption layer — consumed events are already public with no private fields.
+
+---
+
+### 2.7 Moderation / Admin
 
 **Role:** Downstream from all contexts. Observes the entire system; does not own game state.
 
@@ -215,7 +256,13 @@ Room Gameplay ──────────────────────
           │                           privacy filter applied)                │
           │                                                                  │
           ├──▶ Ranking               (downstream: consumes GameCompleted     │
-          │                           for casual Elo updates)                │
+          │    │                      for casual Elo updates)                │
+          │    │                                                             │
+          │    └──▶ Analytics        (downstream: EloUpdated → leaderboard  │
+          │                           display copy)                          │
+          │                                                                  │
+          ├──▶ Analytics             (downstream, conformist: GameCompleted  │
+          │                           → player stats; spike absorption)      │
           │                                                                  │
           └──▶ Tournament Orchestration (peer: Room Gameplay runs games      │
                     │               inside tournament rooms; Tournament      │
@@ -224,8 +271,13 @@ Room Gameplay ──────────────────────
                     ├──▶ Ranking    (downstream: consumes TournamentCompleted│
                     │               for tournament Elo updates)              │
                     │                                                        │
-                    └──▶ Spectator View (downstream: tournament bracket and  │
-                                        match progress events)              │
+                    ├──▶ Spectator View (downstream: tournament bracket and  │
+                    │                   match progress events)               │
+                    │                                                        │
+                    └──▶ Analytics  (downstream: MatchCompleted,            │
+                                     RoundCompleted, AdvancementResolved,   │
+                                     TournamentCompleted → bracket views,   │
+                                     standings)                             │
                                                                              │
 Moderation/Admin ◀──────────────────────────────────────────────────────────┘
      (downstream observer: issues commands back upstream via admin actions)
@@ -240,8 +292,11 @@ Moderation/Admin ◀────────────────────
 | Room Gameplay → Spectator View | **Published Language + ACL** | Spectator View applies an anti-corruption layer (whitelist filter) to prevent private data leakage. |
 | Room Gameplay → Ranking | **Published Language** | Ranking consumes `GameCompleted` events; no ACL needed — event payload is already public. |
 | Room Gameplay → Tournament Orchestration | **Partnership** | Both contexts must collaborate on tournament room lifecycle: Tournament Orchestration creates rooms, Room Gameplay runs games inside them, and emits results back. |
+| Room Gameplay → Analytics | **Published Language** | Analytics consumes `GameCompleted` and `PlayerForfeited` for player statistics aggregation. Conformist — no ACL needed, payload is already public. |
 | Tournament Orchestration → Ranking | **Published Language** | Ranking consumes `TournamentCompleted`; tournament Elo is computed once post-tournament. |
 | Tournament Orchestration → Spectator View | **Published Language** | Bracket and match progress events flow to Spectator View for tournament display. |
+| Tournament Orchestration → Analytics | **Published Language** | Analytics consumes `MatchCompleted`, `RoundCompleted`, `AdvancementResolved`, `TournamentCompleted` to build bracket views and standings. Primary path for absorbing the round-end `GameCompleted` spike without impacting Room Gameplay write throughput. |
+| Ranking → Analytics | **Published Language** | Analytics consumes `EloUpdated` and `TournamentEloUpdated` to maintain display copies of leaderboards. Ranking remains the authoritative Elo source. |
 | Moderation/Admin → all contexts | **Downstream Observer + Conformist** | Admin observes events from all contexts; issues corrective commands (void, cancel) back upstream. Admin conforms to each context's command model. |
 | Identity/Session → Moderation/Admin | **Upstream / Downstream** | Admin users require authenticated sessions issued by Identity/Session. Moderation conforms to the same session model as all other contexts. |
 | Moderation/Admin → Identity/Session | **Downstream → Upstream (corrective command)** | When abuse escalation reaches a ban, Moderation issues a `SuspendPlayer` or `BanPlayer` command to Identity/Session, which invalidates the session and locks the account. |
@@ -258,7 +313,7 @@ The table below highlights the most notable events that cross context boundaries
 | `RoomStatusChanged` | Room Gameplay | Spectator View | No |
 | `PlayerAssignedToRoom` | Room Gameplay | Spectator View | No |
 | `GameStarted` | Room Gameplay | Spectator View, Tournament Orchestration | No |
-| `GameCompleted` | Room Gameplay | Ranking, Spectator View, Tournament Orchestration | No (final placements and scores are public) |
+| `GameCompleted` | Room Gameplay | Ranking, Spectator View, Tournament Orchestration, Analytics | No (final placements and scores are public) |
 | `CardPlayed` | Room Gameplay | Spectator View | No (card identity is public once played) |
 | `CardDrawn` | Room Gameplay | Spectator View | **Yes** — drawn card identity withheld from spectators |
 | `TurnAdvanced` | Room Gameplay | Spectator View | No |
@@ -272,17 +327,19 @@ The table below highlights the most notable events that cross context boundaries
 | `WildDrawFourChallengeResolved` | Room Gameplay | Spectator View | **Yes** — hand composition withheld until post-game log |
 | `PlayerDisconnected` | Room Gameplay | Spectator View, Tournament Orchestration | No |
 | `PlayerReconnected` | Room Gameplay | Spectator View | No |
-| `PlayerForfeited` | Room Gameplay | Spectator View, Tournament Orchestration, Ranking | No |
+| `PlayerForfeited` | Room Gameplay | Spectator View, Tournament Orchestration, Ranking, Analytics | No |
 | `SessionInvalidated` | Identity/Session | Room Gameplay | No |
 | `PlayerSuspended` | Identity/Session | Room Gameplay, Tournament Orchestration | No |
 | `RoundStarted` | Tournament Orchestration | Spectator View | No |
 | `TournamentRoomAssigned` | Tournament Orchestration | Spectator View | No |
 | `MatchStarted` | Tournament Orchestration | Spectator View | No |
 | `GameInMatchStarted` | Tournament Orchestration | Spectator View | No |
-| `MatchCompleted` | Tournament Orchestration | Spectator View, Ranking (indirectly via TournamentCompleted) | No |
-| `AdvancementResolved` | Tournament Orchestration | Spectator View | No |
-| `TournamentCompleted` | Tournament Orchestration | Ranking | No |
-| `EloUpdated` | Ranking | Spectator View | No |
+| `RoundCompleted` | Tournament Orchestration | Analytics | No |
+| `MatchCompleted` | Tournament Orchestration | Spectator View, Analytics, Ranking (indirectly via TournamentCompleted) | No |
+| `AdvancementResolved` | Tournament Orchestration | Spectator View, Analytics | No |
+| `TournamentCompleted` | Tournament Orchestration | Ranking, Analytics | No |
+| `EloUpdated` | Ranking | Spectator View, Analytics | No |
+| `TournamentEloUpdated` | Ranking | Analytics | No |
 | `TournamentCancelled` | Moderation/Admin | Tournament Orchestration, Ranking | No |
 | `GameResultVoided` | Moderation/Admin | Ranking | No |
 | `PlayerBanned` | Identity/Session (triggered by Moderation command) | Room Gameplay, Tournament Orchestration, Moderation/Admin (audit) | No |
