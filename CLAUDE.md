@@ -1,194 +1,177 @@
 
-This project focuses on the development of specifications for the following task
-described below:
+## Current Task: Architecture Checkpoint
+
+This project now focuses on translating the completed DDD design into a concrete microservices-oriented architecture.
 
 --- Start task description
 
-1) Context (must be included in your analysis)
+# Architecture Checkpoint Assignment Instructions
 
+## 1) Context (must be included in your analysis)
 
-UnoArena: Global Real-Time Uno Platform & Massive Tournaments
+### UnoArena: Global Real-Time Uno Platform & Massive Tournaments
 
-The Problem: Build the backend for a highly competitive Uno platform that supports both individual, ad-hoc game rooms (2-10 players) and massive, multi-tiered elimination tournaments (up to 1,000,000 players). The system must handle split-second game mechanics (like calling "Uno!"), real-time tournament progression, and a global Elo-based ranking system.
+**Summary (for orientation):** Build the backend for a highly competitive Uno platform that supports ad-hoc rooms (2–10 players) and massive elimination tournaments (**up to 1,000,000 players**). A **core engineering challenge** is the **first-round surge of over 100,000 simultaneous matches**—a coordinated **round kickoff** where on the order of **100k rooms can transition to in-progress within seconds**, not merely "large tournament" load spread over time or slow bracket eventual consistency. Design explicitly for that spike (see §6.5). The same document covers server-authoritative RNG and game logs, strict concurrency on room actions, real-time updates with spectator privacy, disconnection and forfeit policies, tournament round progression, security and rate limiting, analytics/read models, and ranking semantics consistent with the prior design work.
 
-Key domain rules for Uno! call mechanics:
+The architecture must be **traceable** to the bounded contexts, commands, events, and consistency decisions produced in the Design Checkpoint (concrete expectations in §2).
 
+## 2) Assignment objective
 
-    A player who plays their second-to-last card must call "Uno!" before the next player takes their turn.
-    Any opponent may challenge the call within a 5-second window after the card is played.
-    If a player fails to call "Uno!" and is successfully challenged, they draw 2 penalty cards.
-    If a player is challenged but did correctly call "Uno!", the challenger draws 2 penalty cards.
-    A challenge window closes as soon as the next player begins their turn.
+Translate the **domain design** into a **concrete microservices-oriented architecture** for UnoArena: for each bounded context, specify deployable services, their responsibilities, **public interfaces** (APIs and/or messaging contracts), **inter-service communication patterns**, and **persistence** choices.
 
+This checkpoint is about **solution architecture** (services, boundaries, integration, data ownership), not full implementation. Justify how the architecture preserves domain invariants, scales under the stated load assumptions, and handles failure modes already analyzed at the domain level.
 
-Core Engineering Challenges:
+**Traceability** to the Design Checkpoint is **not** a vibe check: public async contracts (topic/queue names, event types, payload ownership) must **match** documented **domain events**—or **state the delta** (rename, split, merge) and record it in CHANGELOG-design.md (§6.2). Synchronous APIs (resources, RPCs, main operations) must **map** to the **command** (and query) catalog, or document the delta. A reviewer should be able to trace each integration row (§6.3) to a named command or event in the design package.
 
+**Invariants that must have an explicit architectural home:**
 
-    Hierarchical Lifecycle Management (Rooms & Tournaments): Managing lifecycle state transitions at two levels. Individual rooms move through clear states (waiting -> in_progress -> completed). At tournament level, rounds must coordinate up to 1,000,000 players and absorb the first-round surge of over 100,000 simultaneous matches. Room completion must securely trigger winner advancement and next-round progression.
-    Authoritative Deck & RNG Service: All card shuffling and draws are generated server-side. Every single state change (e.g., card.played, color.changed, penalty.drawn) is appended to an immutable game log before being broadcast, making every random outcome deterministic, auditable, and replay-safe. This is critical for dispute resolution in high-stakes tiers.
-    Real-Time Updates & Spectator Privacy: Player actions and game-state updates must be propagated in near real time to players and observers at very large scale. Observers can watch rooms, but they must only see public information (player names and discard stack), never private hands. The system must preserve responsiveness under heavy connection load without compromising gameplay consistency.
-    Strict Concurrency & Reactive Rules Enforcement: The room-state service must serialize concurrent REST requests with strict sequence numbers. Stale actions are rejected with HTTP 409 Conflict, and clients reconcile via SSE.
-    Disconnection Handling & Session Continuity: The platform must handle temporary and permanent disconnections according to the following domain rules:
-    A disconnected player has a 60-second reconnection window before being considered inactive.
-    During the reconnection window, the disconnected player's turn is skipped (as if they passed), and no bot substitution occurs.
-    If the window expires during the player's turn, an automatic forfeit is issued.
-    Forfeit in a casual room ends the player's participation; the game continues with remaining players.
-    Forfeit in a tournament room counts as a loss for that match; the player is eliminated from the tournament.
-    A player who reconnects within the window resumes with their original hand intact.
-    Round-Based Tournament Progression Rules: Tournaments proceed in elimination rounds until 10 or fewer players remain, at which point a final room is created. Each round, players are distributed into rooms of up to 10 players. Within a room, players play a Best-of-Three (Bo3) match (up to 3 individual games with the same players). A match may end early if any player reaches 2 game wins; otherwise it ends after Game 3. The top 3 players advance by room ranking: match wins first, then lower cumulative card-point burden, then lower cumulative finish time. Each game uses multi-placement: play continues after the winner goes out to determine 2nd and 3rd place; each placed player receives a server-side finish_timestamp used for tie-breaking.
-    Security Hardening, Session Control & Rate Limiting: Include strong auth boundaries, input validation, signed event integrity where needed, and audit logs for sensitive operations. Enforce single-active-session per player (new login invalidates old session). Apply multi-layer rate limits (per IP, per user, per room/tournament action) with adaptive throttling.
-    Tournament Analytics & Bracket Read Models: The platform must absorb spikes of game.completed events and update read-optimized views for player stats and bracket visualization.
-    Elo & Ranking Rules: The global Elo-based ranking applies to casual (ad-hoc) rooms only. Tournament play uses a separate tournament-placement rating. Elo is updated once per completed game (not per match or per tournament). The Elo delta is calculated from final placement order within the room (1st through last). Abandoned games (forfeit by all remaining players) do not affect Elo.
+- **Sequence-number enforcement** — where stale or replayed commands/events are rejected (service and layer).
+- **Log-before-broadcast atomicity** — authoritative writes persisted before clients see updates (e.g., outbox, transactional boundary).
+- **5-second Uno! challenge window** — timer ownership, expiry handling, and failure behavior.
+- **60-second reconnection window** — how the window is tracked, persisted, and honored across process or node failure.
+- **Single-active-session** — how **live** SSE/WebSocket connections for the old session are **terminated or forced to re-auth** via a **push-invalidation path** (Identity/Session → gateway/BFF/control channel), not only a database flag the client never reads.
+- **Spectator projection** — spectators **never** receive hand data; where projection, APIs, or transport enforce the filter.
+- **Match series coordination** — which component **persists tournament match state across individual games** (Bo3 scoreline, starting the next game, early termination at two wins, series winner); how room/game completion events flow from Room Gameplay into match outcome tracking and what starts the subsequent game.
+- **Abandoned-game vs. completed-game outcomes (Elo and tournaments)** — which component **detects** abandonment vs. normal completion; how tournament forfeits are recorded as losses; how abandoned casual games exclude Elo updates; and how that distinction is carried in events into the Ranking context.
 
+**Also align with the Design Checkpoint non-negotiable rubric** for Elo scope (no tournament or abandoned casual games), tournament advancement (top three, series, tie-break), and consistent match vs. game terminology in interfaces and events.
 
-What makes it hard at 1,000,000 users: Massive synchronization of tournament rounds while keeping gameplay responsive for very large numbers of connected players and observers.
+## 3) Relationship to the Design Checkpoint
 
+- The submission must include the **latest version of the design** (glossary, contexts, aggregates, commands/events, flows, edge cases, consistency strategy, open questions) as it exists after any updates made to align with the architecture.
+- If bounded context boundaries, aggregates, or events change to fit the architecture, design documents must be **updated** accordingly with a brief **delta explanation** (what changed and why).
+- If the design and architecture diverge without documented rationale, the submission is incomplete.
 
-2) Assigment objective
+## 4) Scope and constraints
 
-Produce a rigorous, behavior-complete domain model for the UnoArena problem using a Domain-Driven Design (DDD) approach, with a strong focus on behavior, rules, and business consistency under extreme concurrency and scale.
+- **In scope:** Service decomposition per context, interface definitions, sync/async integration, data stores per context, cross-cutting concerns at an architectural level (auth boundaries, idempotency, observability hooks), and diagrams that explain runtime behavior.
+- **Out of scope:** Exact cloud SKUs, instance-family shopping lists, full CI/CD pipelines, line-by-line framework configuration, or production runbooks. **In scope:** naming representative technologies (e.g. PostgreSQL, Kafka, Redis) whenever they clarify persistence, messaging, or caching.
+- **Client protocol:** Must name and justify the **client connection model** (e.g. REST + SSE, WebSocket, hybrid) and how it lands on a **gateway or BFF**. Hand-wavy "clients use HTTP" with no realtime story is insufficient.
 
+## 5) Mandatory methodology
 
-The assigment must explicitly analyze:
+Use **clear architectural views**:
 
+- **Context view:** Context map aligned to services (which logical context maps to which deployable components).
+- **Container view:** Major runnable components (services, gateways, workers, brokers) and trust boundaries.
+- **Integration view:** For each pair of components that communicate, state the pattern.
 
-    Domain language and business rules.
-    Boundaries and responsibilities in the domain.
-    Full domain event model.
-    Edge cases and failure paths (not only happy paths).
+EventStorming or domain narratives from the design checkpoint should be **referenced** when explaining critical flows.
 
+## 6) Required deliverables
 
-3) Scope constraints
+### 6.1 Architecture of every bounded context
 
-    This checkpoint is about domain design, not infrastructure details.
-    Do not go deep into low-level architecture, deployment, framework choices, cloud sizing, or protocol internals.
-    The client connection protocol details are out of scope for this iteration and will be defined in the next one. You may, however, state explicit assumptions about connection semantics (e.g., "we assume at-least-once delivery") without designing the protocol itself. Any such assumptions must be listed in deliverable 8.
+For **each** bounded context:
 
+1. **Purpose and scope** — What this context owns; what it does not own.
+2. **Services (containers)** — Name each and state its primary responsibility.
+3. **Public interfaces**
+   - **Synchronous:** REST/GraphQL/gRPC — list main resources or RPCs, auth expectations, versioning.
+   - **Asynchronous:** topics/queues, event names, payload ownership, idempotency keys/correlation identifiers.
+   - **Internal-only** interfaces — clearly marked.
+4. **Dependencies on other contexts** — Upstream/downstream relationships, anti-corruption layers.
 
-4) Mandatory methodology
+**Room Gameplay** must spell out how **log-before-broadcast** is satisfied (every authoritative state change durably appended to the immutable game log before any broadcast). Name the mechanism (transactional outbox, event-sourced command handling, etc.). Include a **mandatory intra-context sequence diagram** for a hot path (play card, draw, or shuffle) showing log-before-broadcast end-to-end.
 
-Use EventStorming as the primary discovery and analysis technique.
+**Domain timers** (5-second Uno! challenge window, 60-second reconnection window) must document: which component schedules and owns the timeout, what happens if that node dies mid-window, and how timeout side effects are idempotent.
 
+**Single-active-session** must document what happens beyond revoking the token in storage: **how the system reaches the gateway/BFF/realtime edge** holding previous session's long-lived connections so those streams are closed, errored, or unsubscribed promptly.
 
-At minimum, your EventStorming outcome must cover:
+**Tournament Orchestration** must architect the **round kickoff for the first-round surge**: what component fans out room creation or match assignment for ~100k rooms; how partial failures are handled (retry, compensate, dead-letter, idempotent room creation); thundering-herd controls (sharded workers, rate-limited enqueue, staged rollout, backpressure).
 
+**Analytics/read models** must address the **game.completed spike at round end**: how fan-out is ingested (partitioning, consumer groups, dedicated projection workers); how the projection pipeline absorbs the burst without pushing backpressure into Room Gameplay writers; how bracket/standings views remain coherent.
 
-    Main business flows (room lifecycle, match lifecycle, tournament progression).
-    Exceptional flows (timeouts, stale commands, disconnects, forfeits, invalid actions).
-    Cross-context interactions triggered by domain events.
-    Invariants and policy decisions that protect consistency.
+**Spectator View** must give the same privacy treatment as in the Design Checkpoint: what information crosses the boundary, what is withheld, which domain events drive materialization, the projection model (CQRS, event-carried state transfer, etc.), and how privacy is enforced in the projection/query path.
 
+**Diagrams:**
 
-5) Required deliverables
+1. **Intra-context sequence** — Room Gameplay hot path showing log-before-broadcast end-to-end.
+2. **Cross-context sequence** — Spanning at least two bounded contexts, e.g. game completion → match/series outcome → tournament/round advancement, or casual game completion → Elo update.
 
-Your assigment submission must include:
+### 6.2 Latest design package (aligned with the architecture)
 
+Include current design artifacts so a reader can verify: ubiquitous language and context map still match the architecture; commands/events still match integration contracts; edge cases and failure paths are still addressed.
 
-    Domain glossary
+Provide a **CHANGELOG-design.md** summarizing updates. Minimum bar:
 
+1. **Enumerate by name** every design artifact changed (file path or doc section), citing the **deliverable number and title** from the Design Checkpoint §5 where applicable.
+2. For each change, state **why** — specifically the **architecture or integration constraint** that required it.
+3. For each change, **confirm explicitly** that no Design Checkpoint non-negotiable domain guarantee was weakened or dropped.
 
-    Ubiquitous language with precise definitions.
-    Must distinguish: game (single Uno game), match (Best-of-Three series of up to 3 games within a tournament room), round (one elimination tier in a tournament), tournament.
+### 6.3 Communication patterns
 
+**Client connection model (mandatory):** Declare which pattern clients use for realtime play and spectating; which deployable terminates long-lived connections; how per-room ordering is preserved; how this composes with session invalidation and spectator privacy.
 
-    Bounded contexts and context map
+**Rate limiting (mandatory):** Map each layer (per IP, per user, per room/tournament action) to **concrete deployables**. Explain how the limiter gets principal identity and scope.
 
+**Integration table** for each significant integration:
 
-    Proposed contexts (for example: Room Gameplay, Tournament Orchestration, Ranking, Identity/Session, Spectator View).
-    Relationships between contexts (upstream/downstream or equivalent).
-    Explicit treatment of the Spectator View context: what information crosses its boundary, what is withheld, and which domain events drive its updates.
+| From → To | Pattern | Rationale | Failure semantics (timeout, retry, DLQ, saga step, etc.) |
+|-----------|---------|-----------|----------------------------------------------------------|
 
+Must include at least one row for time-bounded domain windows (Uno! challenge and/or reconnection timer) and at least one row for session invalidation → live connection termination.
 
-    Aggregates, entities, value objects
+### 6.4 Persistence layer per context
 
+For each context/service:
 
-    Candidate aggregates and consistency boundaries.
-    Key invariants each aggregate must enforce.
+- **Primary store** and what data it owns.
+- **Consistency model** — strong vs. eventual; transactional boundaries.
+- **Read models** — materialized views, caches; how built and how stale they may be.
+- **Retention and audit** — game log immutability, tournament audit needs, PII boundaries.
 
+For Room Gameplay: show how the primary store and transaction boundaries implement log-before-broadcast (same commit as log append + outbox row, or single event-store append before relay).
 
-    Commands and domain events catalog
+Show the **read path for the immutable game log** (dispute resolution and audit): who may query or export it, for what purpose, and how access is authorized.
 
+Avoid a single shared database across contexts unless explicitly justified.
 
-    List core commands and resulting events.
-    Include causality (what triggers what) and idempotency considerations.
+### 6.5 Capacity sketch (mandatory)
 
+Order-of-magnitude reasoning at minimum:
 
-    Domain event flow narratives
+- Peak concurrent matches in the first tournament round (100,000+ simultaneous matches).
+- Approximate concurrent rooms/players/spectators at that moment.
+- Event or command rates that matter for brokers and gameplay services.
+- Which components scale horizontally vs. intentionally singleton or partitioned.
+- Spectators as a multiplier on realtime load (10:1 ratio plausible); if fan-out or regional edges are capped, say so.
 
+## 7) Suggested additional deliverables (strongly recommended)
 
-    End-to-end event sequences for:
-    Room creation to completion.
-    Tournament round advancement.
-    Elo/ranking updates after game completion.
-    Include both synchronous decision points and asynchronous propagation.
+1. **NFR matrix** — Latency budgets, throughput targets, availability, and how each major flow meets them.
+2. **Threat model (lightweight)** — STRIDE or similar for public APIs, session takeover, event tampering, rate-limit bypass.
+3. **Observability architecture** — Logging, metrics, tracing; correlation IDs across async flows; dashboards for tournament round health.
+4. **Decision log (ADRs)** — Short Architecture Decision Records for the top 5–10 choices (broker vs. none, outbox, BFF vs. direct, client connection model, etc.).
 
+## 8) Evaluation criteria
 
-    Edge cases and failure-path analysis
-
-
-    At least the following categories:
-    Concurrent conflicting actions (e.g., two players simultaneously playing a card).
-    Disconnections and late rejoin attempts.
-    Stale commands and replayed commands.
-    Partial failures between contexts.
-    Security and abuse scenarios (session takeover, spam, flooding).
-    Spectator privacy violations (e.g., a player attempting to read another player's hand via the spectator channel).
-    For each case, define expected domain behavior and emitted events.
-
-
-    Consistency and recovery strategy (domain level)
-
-
-    Retries, deduplication, compensation/saga decisions at the business level.
-    How invariant violations are prevented or detected.
-
-
-    Open questions and assumptions
-
-
-    Clearly separate assumptions from validated requirements.
-    Include any connection-semantics assumptions made under the scope constraints of Section 3.
-
-
-6) Evaluation criteria
-
-Submissions will be evaluated on:
-
-
-    Correctness and completeness of domain modeling.
-    Quality and coverage of domain event analysis.
-    Depth of edge-case and failure-path reasoning.
-    Clarity of bounded contexts and invariants.
-    Consistency of ubiquitous language and EventStorming artifacts.
-    Ability to keep architectural detail out of scope while preserving domain rigor.
-
-
-7) Submission format and deadline
-
-    The delivery must be provided as one or more Markdown files, organized at minimum into:
-    A root README.md or index.md that lists and links all documents.
-    One file per major deliverable (or clearly separated sections if combined).
-    The submission may include supporting visual artifacts such as:
-    ASCII diagrams
-    Mermaid charts
-    PNG images
-    Students must submit the repository link on time.
-    The grading cutoff is based on git history: the last commit with timestamp up to 23:59 (April 5th) is the one that will be considered.
-
-
+- **Coherence** — Services and interfaces match bounded contexts and domain events.
+- **Interface quality** — Clear ownership of commands, queries, and events; contracts usable by another team.
+- **Integration appropriateness** — Communication patterns fit the problem (consistency vs. latency vs. scale).
+- **Security enforcement placement** — Multi-layer rate limiting mapped to deployables; authentication architecturally grounded.
+- **Data architecture** — Per-context persistence aligns with consistency needs; read/write separation where needed.
+- **Alignment** — Design package and architecture tell one story; changelog explains intentional changes.
+- **Traceability** — Event names and command/API surfaces line up with design catalogs, or deltas are explicit.
+- **Operational realism** — Failure handling, idempotency, and observability are credible for real-time, high-concurrency gameplay.
+- **Timer durability** — 5-second Uno! and 60-second reconnection timers have explicit architectural owner, survive process crashes, expiry side effects are idempotent.
+- **Scale credibility** — Capacity sketch (§6.5) supports claims about 1,000,000-player tournament and 100,000+ first-round simultaneous matches.
 
 --- End task description
 
-The information for this project is in the /specs files and everything that is considered important should be persisted in markdown files for other LLMs to use as persistent memory.
+## Design artifacts
 
-The aim of this project is to focus on its design based on DDD, take into accounts what events will be important and how they should be handled, and develop flows applying Event Storm. Implementation details for the architecture of the project are not of importance, so things such as which database or Pub/Sub provider to use are not important, the core objective is to focus on design.
+The completed DDD design lives in the `/design` directory and the domain rules live in `/specs`. Both must remain consistent with the architecture:
 
-## Specification Files
-
-All design specifications live in the `/specs` directory:
-
-- **`specs/RULESET.md`** — Complete UNO game rules for this platform: card set, turn mechanics, special cards, Draw Two stacking, jump-in rules, Wild Draw Four challenges, Uno! call rules, win conditions, and scoring. This is the authoritative source for all in-game logic decisions.
-
-- **`specs/CONSTRAINTS.md`** — Platform-wide business rules and constraints: player accounts and identity, room lifecycle and lobby system, turn timer and AFK detection, disconnection and forfeit policies, game format (casual), state visibility for players and spectators, Elo and ranking system, and game log/dispute rules. References RULESET.md and TOURNAMENT_RULES.md.
-
-- **`specs/TOURNAMENT_RULES.md`** — All tournament-specific rules: elimination-round structure (up to 1M players), Bo3 match format (up to 3 games with early end at 2 wins), top-3 advancement and tie-break rules, 20-minute timeout behavior, phase-start thresholds for progressive room formation, matchmaking-driven lobby, disconnection and elimination rules, and a summary diff vs. casual game rules.
+- **`design/GLOSSARY.md`** — Authoritative ubiquitous language.
+- **`design/CONTEXT_MAP.md`** — 6 bounded contexts and their relationships.
+- **`design/DOMAIN_MODEL.md`** — 9 aggregates, entities, value objects, and invariants.
+- **`design/COMMANDS_EVENTS.md`** — Full command and event catalog with preconditions, payloads, causality, and idempotency.
+- **`design/EVENT_FLOWS.md`** — End-to-end event flow narratives (room lifecycle, tournament round, Elo, disconnection).
+- **`design/FAILURE_PATHS.md`** — Edge cases and failure path analysis (30+ scenarios).
+- **`design/CONSISTENCY_RECOVERY.md`** — Sagas, deduplication, compensation strategies.
+- **`design/ASCII_FLOW.md`** — EventStorming boards (CMD/EVT/POL notation).
+- **`specs/RULESET.md`** — Complete UNO game rules (authoritative source for in-game logic).
+- **`specs/CONSTRAINTS.md`** — Platform-wide business rules (rooms, sessions, Elo, game log).
+- **`specs/TOURNAMENT_RULES.md`** — Tournament-specific rules (Bo3, advancement, tie-breaks, timeouts).
+- **`specs/ASSUMPTIONS.md`** — Open questions and explicit assumptions.
