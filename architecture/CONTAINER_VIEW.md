@@ -276,8 +276,8 @@ All decisions are traceable to the plan in [PLAN.md](./PLAN.md) and the resolved
 | **Name** | `spectator-service` |
 | **Context** | Spectator View |
 | **Technology** | JVM or Go service; Redis (Streams per `game_id`, PublicGameView hash, LeaderboardView sorted sets); PostgreSQL (PublicGameLog sealed post-game, BracketView persistent) |
-| **Primary responsibility** | Privacy-filtered live game projection; spectator WebSocket connections (via Gateway); fan-out via Redis Streams (`XREAD BLOCK`); reconnection snapshots from Stream + Hash |
-| **Instances** | Horizontally scalable; any instance can serve any spectator — Redis Streams provide shared history without sticky routing |
+| **Primary responsibility** | Privacy-filtered live game projection; holds the application-level spectator WebSocket connection (the API Gateway proxies the WS upgrade to this service; spectator-service reads Redis Streams directly and writes frames to the proxied connection); reconnection snapshots from Stream + Hash |
+| **Instances** | Horizontally scalable; no sticky routing required — the API Gateway's WS proxy routes new spectator upgrades to any available instance, and Redis Streams provide shared event history accessible from any instance |
 | **Owns** | `public_game_logs`, `bracket_views` PostgreSQL tables; `spectator:stream:<game_id>` Redis Streams; `spectator:gameview:<game_id>` Redis Hashes; `spectator:roomlist:<room_id>` Redis Hashes; `spectator:leaderboard:*` Redis Sorted Sets |
 
 **Interfaces:**

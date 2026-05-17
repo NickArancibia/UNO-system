@@ -10,7 +10,7 @@ This document specifies the communication patterns between every pair of compone
 
 **Active players** connect via **WebSocket** (`wss://`) to the **API Gateway**. The gateway terminates TLS and the WebSocket connection, authenticates the player via JWT on upgrade, and forwards each incoming WebSocket frame as an HTTP POST to `room-gameplay-service` carrying the validated `player_id` and `game_id` in headers.
 
-**Spectators** connect via **WebSocket** (`wss://`) to the **API Gateway**, which routes the connection to `spectator-service`. Spectators subscribe to a specific game's stream via `wss://.../v1/spectator/games/{game_id}`.
+**Spectators** connect via **WebSocket** (`wss://`) to the **API Gateway**. The gateway performs TLS termination and JWT validation on the HTTP upgrade request, then **proxies the live WebSocket connection** to a `spectator-service` instance: the client-facing TCP connection stays at the gateway, but the gateway opens a persistent WebSocket connection to the selected `spectator-service` pod and bidirectionally forwards frames. The `spectator-service` instance therefore holds the effective application-level connection and reads Redis Streams directly to fan out filtered events. This distinguishes the spectator path (gateway → service WebSocket proxy) from the active-player path (gateway → service HTTP-per-command). Spectators subscribe to a specific game's stream via `wss://.../v1/spectator/games/{game_id}`.
 
 **REST endpoints** (registration, login, tournament management, admin, analytics) are standard HTTPS requests terminated at the API Gateway and proxied to the appropriate service.
 
@@ -79,7 +79,7 @@ Every significant component-to-component integration is listed below. Each row s
 
 | From → To | Pattern | Rationale | Failure semantics |
 |---|---|---|---|
-| room-gameplay-service → API Gateway | HTTP POST `/internal/push/{player_id}` (mTLS, internal) | Server-initiated WebSocket push for reconnect snapshots and timer-expiry side-effect broadcasts; Gateway looks up player's connection in in-memory registry and writes to WebSocket | `404` response = player not connected (no-op); `200` = delivered. No retry on 404. On Gateway instance failure, player reconnects to a different instance and receives snapshot via the reconnect path. |
+| room-gameplay-service → API Gateway | HTTP POST `/internal/push/{player_id}` (mTLS, internal) | Server-initiated WebSocket push for reconnect snapshots and timer-expiry side-effect broadcasts; Gateway looks up player's connection in in-memory registry and writes to WebSocket | `404` response = player not connected on that gateway instance (load balancer may have routed the push to a different instance than the one holding the connection). Room Gameplay treats `404` as a no-op and does not retry. **Client responsibility:** if the client reconnects but receives no server-pushed snapshot within 2 seconds, it must proactively call `GET /v1/games/{game_id}/state` to fetch the current `PublicGameView`. This REST fallback is always available as an explicit catch-up path. `200` = snapshot delivered. |
 
 ### 3.3 Gateway → Identity/Session (auth path)
 
@@ -293,9 +293,13 @@ room-gameplay-service    Kafka (game-events)    ranking-service    Redis (leader
         |            "casual",   |                    |                    |                     |               |
         |            placements} |  [check dedup:     |                    |                     |               |
         |                        |   last_casual_game_id != game_id]       |                     |               |
+        |                        |  [check outcome:   |                    |                     |               |
+        |                        |   outcome='abandoned'→skip]             |                     |               |
         |                        |  [SELECT FOR UPDATE |                    |                     |               |
         |                        |   elo_records WHERE|                    |                     |               |
-        |                        |   player_id IN (P1,P2,P3)]              |                     |               |
+        |                        |   player_id IN (P1,P2,P3)               |                     |               |
+        |                        |   ORDER BY player_id]                   |                     |               |
+        |                        |   -- consistent lock order prevents deadlock               |               |
         |                        |  [compute pairwise Elo deltas]          |                     |               |
         |                        |  [K-factor: P1→K=16,|                    |                     |               |
         |                        |             P2→K=32,|                    |                     |               |

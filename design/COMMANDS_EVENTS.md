@@ -386,7 +386,7 @@ Mark a game for admin review.
 | `PlayerDisconnected` | `GameSession` | `game_id`, `player_id`, `reconnection_window_expires_at` | Spectator View, Tournament Orchestration |
 | `PlayerReconnected` | `GameSession` | `game_id`, `player_id` | Spectator View |
 | `PlayerForfeited` | `GameSession` | `game_id`, `player_id`, `reason: Voluntary\|AFK\|ReconnectionExpired`, `remaining_active_players` | Spectator View, Tournament Orchestration, Ranking |
-| `GameCompleted` | `GameSession` | `game_id`, `room_id`, `placements: List<GamePlacement>` (all placed players with rank 1–3 and `finish_timestamp`), `non_placed: List<GamePlacement>` (rank 4+ with game_score and cards_remaining), `forfeited: List<player_id>`, `game_type: casual\|tournament`, `tournament_id?`, `match_id?` | Ranking (casual), Tournament Orchestration (tournament), Spectator View |
+| `GameCompleted` | `GameSession` | `game_id`, `room_id`, `outcome: completed\|abandoned` (`abandoned` when all remaining active players forfeited with no winner determined; `completed` in all other cases), `placements: List<GamePlacement>` (all placed players with rank 1–3 and `finish_timestamp`), `non_placed: List<GamePlacement>` (rank 4+ with game_score and cards_remaining), `forfeited: List<player_id>`, `game_type: casual\|tournament`, `tournament_id?`, `match_id?` | Ranking (casual), Tournament Orchestration (tournament), Spectator View |
 | `PlayerPlaced` | `GameSession` | `game_id`, `player_id`, `position` (1, 2, or 3), `finish_timestamp`, `active_players_remaining`, `state_version` | Spectator View (placement announcement), Tournament Orchestration |
 
 ---

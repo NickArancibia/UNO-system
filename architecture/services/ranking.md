@@ -78,7 +78,7 @@ Topic partitioned by `game_id`; 100 partitions; 20 consumer instances.
 
 | Event | Idempotency key | Action |
 |---|---|---|
-| `GameCompleted` | `game_id` | If `game_type = 'casual'` AND `forfeited` list does not contain all remaining active players (i.e., not an abandoned game): compute casual Elo delta for each player. Forfeited players are assigned rank N (last place). If `game_type = 'casual'` AND all remaining active players forfeited → no Elo update (abandoned game). Tournament games (`game_type = 'tournament'`) do **not** trigger casual Elo updates. |
+| `GameCompleted` | `game_id` | If `game_type = 'casual'` AND `outcome = 'completed'`: compute casual Elo delta for all players (forfeited players receive rank N — last place). If `game_type = 'casual'` AND `outcome = 'abandoned'`: skip Elo entirely (no winner was determined). Tournament games (`game_type = 'tournament'`) do **not** trigger casual Elo updates regardless of `outcome`. |
 | `GameResultVoided` | `game_id` | Reverse the Elo delta applied for this game. Emit one `EloReverted` per affected player. Idempotent: if `game_id` was already reversed, skip. |
 | `PlayerRegistered` | `player_id` | Initialize `EloRecord` with starting Elo (1,000) for the new player. |
 
@@ -151,11 +151,11 @@ if |player_deficit| ≤ 0.8 × room_avg_absolute_deficit:
     ΔR_i += 3
 ```
 
-**Abandoned games:** If `GameCompleted.forfeited` contains all remaining active players (no winner determined), the game is classified as abandoned and **no Elo update is applied**. This prevents exploit by forcing abandonment and prevents disconnected players from unfairly losing Elo.
+**Abandoned games:** If `GameCompleted.outcome = 'abandoned'` (set by Room Gameplay when all remaining active players forfeited with no winner determined), **no Elo update is applied**. The `outcome` field is the authoritative signal; Ranking does not re-derive this from the `forfeited` list. This prevents exploitation via forced abandonment and prevents disconnected players from unfairly losing Elo.
 
 **Forfeit-as-last-place:** A single forfeited player (or a subset of forfeited players) is assigned rank N (or N, N−1, ... for multiple forfeits) before the Elo formula is applied. No special logic is needed beyond assigning the lowest rank(s) — the formula handles it naturally.
 
-**Concurrency:** Each `EloRecord` row is locked (`SELECT FOR UPDATE WHERE player_id = $1`) during the update. This serializes Elo updates per player but allows different players to update concurrently. The Kafka partition key `player_id` ensures that all events for the same player arrive at the same consumer, but the row lock provides the correctness fence even if partition assignment changes.
+**Concurrency:** All `EloRecord` rows for a game are locked in a single query (`SELECT FOR UPDATE WHERE player_id = ANY($1) ORDER BY player_id`) before any delta is computed. The `ORDER BY player_id` clause is mandatory: PostgreSQL acquires row locks in physical tuple order if the ORDER BY is omitted, which can differ between two concurrent transactions locking overlapping player sets and cause a deadlock. Sorting by `player_id` ascending gives a global, consistent acquisition order. This serializes Elo updates within a game but allows games with disjoint player sets to proceed concurrently.
 
 ### 5.2 Tournament Elo
 

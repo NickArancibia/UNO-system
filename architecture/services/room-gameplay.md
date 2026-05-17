@@ -132,7 +132,7 @@ These endpoints are not exposed via the API Gateway. mTLS required.
 | `PlayerReconnected` | `(game_id, player_id)` | Spectator View |
 | `PlayerForfeited` | `(game_id, player_id)` | Spectator View, Tournament Orchestration, Ranking, Analytics |
 | `PlayerPlaced` | `(game_id, player_id)` | Spectator View |
-| `GameCompleted` | `game_id` | Ranking, Spectator View, Tournament Orchestration, Analytics |
+| `GameCompleted` | `game_id` | Ranking, Spectator View, Tournament Orchestration, Analytics. Payload includes `outcome: completed\|abandoned`; Ranking skips Elo when `outcome = abandoned`. |
 | `PlayerJoinedQueue` | `(player_id, queue_entry_id)` | — (internal; logged only) |
 | `PlayerLeftQueue` | `(player_id, queue_entry_id)` | — (internal; logged only) |
 | `SpectatorJoined` | `(room_id, player_id)` | Spectator View |
@@ -454,7 +454,7 @@ All Redis keys used by this service are prefixed `gameplay:*`. See [PLAN.md](../
 | Identity / Session | Upstream | JWT claims validated at API Gateway; `player_id` injected into request headers | Player identity, session validity |
 | Identity / Session | Inbound event | Consumes `identity-events` Kafka topic: `SessionInvalidated` → marks player as disconnected; `PlayerSuspended`/`PlayerBanned` → triggers `PlayerForfeited` if in active game | Session invalidation mid-game |
 | Identity / Session | Inbound event | `ReconnectionWindowExpired` on `identity-events` → issues `PlayerForfeited` | Reconnection window expiry (timer owned by Identity/Session, not here) |
-| Identity / Session | Inbound event | `PlayerReconnected` on `identity-events` → re-activates player in `PlayerHand.connected`, emits `PlayerReconnected` (game event) to Spectator View, then calls `POST /internal/push/{player_id}` on the API Gateway with the full public `GameSession` state snapshot (hand contents, discard top, draw pile count, turn order, current version) | Reconnection completion; snapshot delivery via Gateway push endpoint |
+| Identity / Session | Inbound event | `PlayerReconnected` on `identity-events` → re-activates player in `PlayerHand.connected`, emits `PlayerReconnected` (game event) to Spectator View, then calls `POST /internal/push/{player_id}` on the API Gateway with the full public `GameSession` state snapshot (hand contents, discard top, draw pile count, turn order, current version). A `404` response means the player's WebSocket is on a different gateway instance than the one the load balancer selected for this call; Room Gameplay treats `404` as a no-op. The client is responsible for calling `GET /v1/games/{game_id}/state` if no snapshot is received within 2 seconds of reconnecting. | Reconnection completion; snapshot delivery via Gateway push endpoint |
 | API Gateway | Outbound HTTP (mTLS, internal) | `POST /internal/push/{player_id}` — used to deliver server-initiated payloads (reconnect snapshot, timer-expiry side-effect broadcasts) to a specific player's live WebSocket connection | Server-initiated WebSocket push; 404 = player not connected (no-op) |
 | Tournament Orchestration | Inbound command | Receives `CreateRoom`, `AssignPlayersToRoom`, `ForceCompleteGame`, `StartNextGameInRoom` via internal HTTP | Tournament room creation, match timeout resolution, Bo3 game sequencing |
 | Tournament Orchestration | Inbound event | Consumes `tournament-kickoff` Kafka topic (`TournamentRoomAssigned`); creates room and assigns players atomically | Surge fan-out path for round-kickoff (100K rooms at `StartTournament`); replaces HTTP for the first-game creation at scale |

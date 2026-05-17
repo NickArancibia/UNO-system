@@ -202,6 +202,8 @@ INSERT tournament_outbox: GameInMatchStarted {match_id, game_id: G2, sequence_nu
 
 The match timer is NOT reset on new game — the 20-minute match timeout runs from `MatchStarted`, not from each individual game start.
 
+> **Design note — pre-commit ordering:** The `StartNextGameInRoom` HTTP call is intentionally issued *before* the tournament-service transaction commits. This minimises the gap between consecutive games in a Bo3 match: the new game is created and dealing begins as soon as possible, rather than waiting for the tournament-service commit + outbox relay cycle (~200–500 ms). The cost is a narrow consistency window: if the DB commit fails after the HTTP call succeeds, Room Gameplay has created Game N but tournament-service has no record of it. This window is fully handled by the `GameStarted` reconciliation path described in §5.2.1. An outbox-based alternative (commit first → relay `StartNextGameCommand` event → Room Gameplay creates the game → tournament-service reacts to `GameStarted`) would eliminate the window entirely at the cost of ~300–500 ms additional latency between games. That trade-off was rejected because minimising between-game delay is a player-experience priority in a competitive Bo3 match.
+
 ### 5.2.1 Pre-Commit HTTP Call — Failure Recovery
 
 The HTTP call to `StartNextGameInRoom` is issued before the tournament-service transaction commits. If the DB commit fails after the HTTP call succeeds, Room Gameplay has created `G2` but tournament-service has no record of it. This is a real but narrow consistency gap.

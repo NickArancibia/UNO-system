@@ -4,9 +4,11 @@ This document enumerates every design artifact changed to support the architectu
 
 ---
 
-## 1. No Changes to Core Domain Design
+## 1. Summary of Domain Design Changes
 
-After reviewing all architecture service specifications against the design artifacts (`COMMANDS_EVENTS.md`, `DOMAIN_MODEL.md`, `EVENT_FLOWS.md`, `CONSISTENCY_RECOVERY.md`, `FAILURE_PATHS.md`, `CONTEXT_MAP.md`, `GLOSSARY.md`, `ASCII_FLOW.md`, `REQUIREMENTS_TRACEABILITY.md`), **no domain-level commands, events, aggregates, or invariants were changed**. All architecture interfaces trace directly to documented commands and events.
+One payload field was added to `design/COMMANDS_EVENTS.md` (see §2a); all other design artifacts are unchanged. No aggregates, invariants, or event semantics were removed or weakened.
+
+After reviewing all architecture service specifications against the design artifacts (`COMMANDS_EVENTS.md`, `DOMAIN_MODEL.md`, `EVENT_FLOWS.md`, `CONSISTENCY_RECOVERY.md`, `FAILURE_PATHS.md`, `CONTEXT_MAP.md`, `GLOSSARY.md`, `ASCII_FLOW.md`, `REQUIREMENTS_TRACEABILITY.md`), **all architecture interfaces trace directly to documented commands and events**.
 
 The following entries document where the architecture introduces **internal implementation mechanisms** that were not explicitly named in the design, and where the architecture adds **structural elements** (service specs, ADRs, capacity sketch, integration view) that are new deliverables but do not modify domain semantics.
 
@@ -40,6 +42,14 @@ These are new architecture documents that describe implementation choices for ex
 
 ---
 
+## 2a. Design Artifact Change — `GameCompleted` Payload
+
+| Artifact | Change | Design Checkpoint reference | Architecture/integration constraint | Domain guarantee unchanged? |
+|---|---|---|---|---|
+| `design/COMMANDS_EVENTS.md` §2.1 — `GameCompleted` event | Added field `outcome: completed\|abandoned`. `abandoned` is set by Room Gameplay when all remaining active players forfeited and no winner was determined; `completed` in all other cases. | Design Checkpoint §5 deliverable 4 — Event Catalog (`COMMANDS_EVENTS.md`). `GameCompleted` payload. | Ranking must detect whether an abandoned casual game should be excluded from Elo updates. Deriving this from `forfeited.size() == total_players` requires Ranking to know the original player count, which is not in the existing payload. An explicit `outcome` field is the minimal, unambiguous signal. | ✅ Yes — the invariant "no Elo for abandoned casual games" is *strengthened*: it now has a first-class payload signal rather than an inference rule over derived state. No other domain rule is changed. The `outcome = completed` value for normal games is semantically equivalent to the prior implicit assumption. |
+
+---
+
 ## 3. Design Artifacts Explicitly Unchanged
 
 | Design artifact | Status | Notes |
@@ -47,7 +57,7 @@ These are new architecture documents that describe implementation choices for ex
 | `design/GLOSSARY.md` | **Unchanged** | All terms used in architecture specs reference existing glossary entries |
 | `design/CONTEXT_MAP.md` | **Unchanged** | Six bounded contexts map directly to six service specs (Ranking and Moderation now have their own specs, consistent with the context map) |
 | `design/DOMAIN_MODEL.md` | **Unchanged** | `Match` aggregate behavior (Bo3 sequencing, timeout token) implemented by `tournament-service` internal logic; no aggregate boundary was crossed |
-| `design/COMMANDS_EVENTS.md` | **Unchanged** | Every event name in the architecture spec matches a documented event. Internal HTTP commands (`CreateRoom`, `ForceCompleteGame`, `StartNextGameInRoom`, `POST /internal/push/{player_id}`) are implementation mechanisms, not new domain commands. `match_id?` and `game_type` fields on `GameCompleted` were already present in the design |
+| `design/COMMANDS_EVENTS.md` | **One field added** — see §2a above (`GameCompleted.outcome`). All other events unchanged. Internal HTTP commands (`CreateRoom`, `ForceCompleteGame`, `StartNextGameInRoom`, `POST /internal/push/{player_id}`) are implementation mechanisms, not new domain commands. |
 | `design/EVENT_FLOWS.md` | **Unchanged** | All flows in the architecture are traceable to documented event flows |
 | `design/CONSISTENCY_RECOVERY.md` | **Unchanged** | Idempotent consumer keys in architecture specs match documented dedup keys |
 | `design/FAILURE_PATHS.md` | **Unchanged** | Failure paths documented in architecture (timer reconciliation, pre-commit HTTP call recovery) are additive safety nets, not changes to documented failure handling |
@@ -56,7 +66,7 @@ These are new architecture documents that describe implementation choices for ex
 
 ## 4. Summary
 
-**No design artifacts were changed.** All architecture interfaces trace directly to documented commands and events. The architecture adds:
+**One design artifact was changed** (see §2a): `design/COMMANDS_EVENTS.md` — `GameCompleted` payload gains an `outcome: completed|abandoned` field. All other design artifacts are unchanged. The architecture adds:
 
 1. **Internal RPC mechanisms** (`CreateRoom`, `ForceCompleteGame`, `StartNextGameInRoom`, `POST /internal/push/{player_id}`) that implement existing domain command semantics via HTTP.
 2. **Crash-recovery safety nets** (challenge-window reconciliation sweep, passive-connection heartbeat validation, pre-commit HTTP call reconciliation) that strengthen invariants without changing domain semantics.
