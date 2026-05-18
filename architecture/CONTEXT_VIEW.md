@@ -193,4 +193,4 @@ All terms follow [GLOSSARY.md](../design/GLOSSARY.md). Bounded context definitio
 | Ranking → Analytics | Published Language | `ranking-events` Kafka topic; `EloUpdated` / `TournamentEloUpdated` |
 | Moderation → All upstream | Downstream Observer + Corrective | Sync HTTP (SuspendPlayer, BanPlayer, CancelTournament); `moderation-events` Kafka topic (GameResultVoided, GameFlagged) |
 | API Gateway → Identity/Session | Cache-Aside | Redis `identity:vsf:<player_id>`; fallback HTTP on cache miss |
-| Identity/Session → API Gateway | Redis Pub/Sub push | `session:invalidated:<player_id>` channel → Gateway closes WebSocket |
+| Identity/Session → API Gateway | **Redis Pub/Sub (push invalidation)** | `PUBLISH session:invalidated:<player_id>` → Gateway scans in-memory WebSocket registry and closes stale connections |

@@ -62,9 +62,12 @@ The 5-second challenge window requires spectators to see `ChallengeWindowOpened`
 
 | Metric | Target | Basis |
 |---|---|---|
-| Peak commands/second (Room Gameplay ingest) | 50,000 cmd/s | 100K rooms × 10 players × 3 cmd/min/player ÷ 60s, with 2× headroom |
-| PostgreSQL writes/second (Room Gameplay) | 150,000 rows/s | ~3 rows per command (state + events + outbox) |
-| Kafka events/second (`game-events` topic) | 200,000 events/s | Multi-event commands (PlayCard → up to 5 events) × 50K cmd/s |
+| Sustained commands/second (Room Gameplay ingest) | 50,000 cmd/s | 100K rooms × 10 players × 3 cmd/min/player ÷ 60s |
+| Peak commands/second (Room Gameplay ingest) | 100,000 cmd/s | Upper bound: all rooms active with 1 cmd/s average (see CAPACITY_SKETCH.md §3.1); sharded to 6,250 TPS/shard |
+| PostgreSQL writes/second (Room Gameplay, sustained) | 150,000 rows/s | ~3 rows per command (state + events + outbox) × 50K cmd/s |
+| PostgreSQL writes/second (Room Gameplay, peak) | 300,000 rows/s | ~3 rows per command × 100K cmd/s; distributed across 16 shards (~18,750 rows/s/shard) |
+| Kafka events/second (`game-events` topic, sustained) | 200,000 events/s | Multi-event commands (PlayCard → up to 5 events) × 50K cmd/s |
+| Kafka events/second (`game-events` topic, peak) | 300,000 events/s | Multi-event commands × 100K cmd/s peak |
 | `GameCompleted` burst (round end) | 100,000 events in ≤ 60s | ~1,667 events/s sustained for 60s; well within Kafka capacity |
 
 ### 2.2 WebSocket Connections

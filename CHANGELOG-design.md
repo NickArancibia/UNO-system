@@ -1,6 +1,8 @@
 # Design Changelog
 
-This file documents all changes made to the design package after the Design Checkpoint submission, as required by the Architecture Checkpoint (§6.2). Each entry names the affected artifact, cites the original deliverable number and title, states the reason for the change, and confirms that no Design Checkpoint non-negotiable domain guarantee was weakened.
+This file documents all changes made to the design package after the Design Checkpoint submission, as required by the Architecture Checkpoint (§6.2).
+
+> **Note:** The canonical and complete changelog (including architecture-only additions, ADR references, and the full unchanged-artifact inventory) lives at [`architecture/CHANGELOG-design.md`](architecture/CHANGELOG-design.md). This file is retained as a summary of the design-artifact changes only.
 
 ---
 

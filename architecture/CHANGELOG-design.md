@@ -4,74 +4,85 @@ This document enumerates every design artifact changed to support the architectu
 
 ---
 
-## 1. Summary of Domain Design Changes
+## 1. Post-Grading Fixes (Design Checkpoint feedback)
 
-One payload field was added to `design/COMMANDS_EVENTS.md` (see §2a); all other design artifacts are unchanged. No aggregates, invariants, or event semantics were removed or weakened.
-
-After reviewing all architecture service specifications against the design artifacts (`COMMANDS_EVENTS.md`, `DOMAIN_MODEL.md`, `EVENT_FLOWS.md`, `CONSISTENCY_RECOVERY.md`, `FAILURE_PATHS.md`, `CONTEXT_MAP.md`, `GLOSSARY.md`, `ASCII_FLOW.md`, `REQUIREMENTS_TRACEABILITY.md`), **all architecture interfaces trace directly to documented commands and events**.
-
-The following entries document where the architecture introduces **internal implementation mechanisms** that were not explicitly named in the design, and where the architecture adds **structural elements** (service specs, ADRs, capacity sketch, integration view) that are new deliverables but do not modify domain semantics.
+| # | Artifact | Deliverable ref | Change | Reason | Domain guarantee unchanged? |
+|---|---|---|---|---|---|
+| 1 | `design/COMMANDS_EVENTS.md` | Del. 4: Commands & events catalog | Added `reason: SkipCard\|StackEffect\|Disconnect` field to `PlayerSkipped` event payload | Evaluator noted the distinction between skip causes was only inferrable from context; explicit field removes ambiguity for downstream consumers | Yes — field was always implicit in domain logic |
+| 2 | `design/EVENT_FLOWS.md` | Del. 5: Event flow narratives | Added explicit privacy statement to Flow 4 Phase B reconnection snapshot | Evaluator flagged that privacy boundary during reconnection was implicit; architecture requires explicit filter on the distinct resync code path | Yes — privacy rule already enforced; now explicit |
+| 3 | `design/EVENT_FLOWS.md` | Del. 5: Event flow narratives | Added blockquote to Flow 3 Phase B explicitly separating casual and tournament Elo | Evaluator awarded partial credit for separation clarity; architecture requires unambiguous routing to separate Elo paths | Yes — separation already a non-negotiable |
+| 4 | `design/DOMAIN_MODEL.md` | Del. 3: Aggregates, entities, value objects | Reworded PlayerSession invariant 2 to make session creation ordering explicit (new JWT first, then `valid_sessions_from` update) | Push-invalidation path depends on new session being valid before old one is revoked | Yes — single-active-session invariant strengthened |
 
 ---
 
-## 2. Architecture-Only Additions (No Design Delta)
+## 2. Architecture Checkpoint Design Changes
 
-These are new architecture documents that describe implementation choices for existing domain concepts. None require changes to the design package.
+| # | Artifact | Deliverable ref | Change | Reason | Domain guarantee unchanged? |
+|---|---|---|---|---|---|
+| 5 | `design/CONTEXT_MAP.md` | Del. 2: Bounded contexts & context map | Fixed incorrect tie-break criterion (was "cumulative cards remaining"; corrected to "cumulative finish time") | Copy error; already correct in `specs/TOURNAMENT_RULES.md` Section 4 and all other docs | Yes — documentation inconsistency, not a model change |
+| 6 | `design/CONTEXT_MAP.md` | Del. 2: Bounded contexts & context map | Extracted Analytics / Read Models as a new bounded context (section 2.6; Moderation/Admin renumbered to 2.7); updated diagram, relationships, and event contracts | Architecture Checkpoint requires dedicated treatment of `game.completed` burst at round end — partitioning, consumer groups, dedicated projection workers, backpressure isolation | Yes — Analytics is a pure downstream projection; all invariants remain in original owning aggregates |
+
+---
+
+## 3. Architecture-Only Additions (No Design Delta)
+
+These are new architecture documents describing implementation choices for existing domain concepts. None require changes to the design package.
 
 | Artifact | What was added | Design reference | Domain guarantee unchanged? |
 |---|---|---|---|
-| `architecture/services/room-gameplay.md` | Internal HTTP commands: `CreateRoom`, `AssignPlayersToRoom`, `ForceCompleteGame`, `StartNextGameInRoom` | These implement the Match aggregate's Bo3 sequencing (DOMAIN_MODEL.md §Match) and tournament room creation; they are internal RPCs, not new domain commands | ✅ Yes — Match aggregate still owns game sequencing; the HTTP calls are the delivery mechanism |
-| `architecture/services/room-gameplay.md` §6 | Challenge-window reconciliation sweep (every 2s) | Implements the 5-second challenge window timer durability requirement (ADR-004, RULESET.md) | ✅ Yes — the sweep is a crash-recovery safety net; it does not change the 5-second window semantics |
-| `architecture/services/room-gameplay.md` §10 | Gameplay PostgreSQL sharding by `game_id % 16` | No design change — sharding is an infrastructure decision for the `GameSession` aggregate's persistence layer | ✅ Yes — per-game serialization is preserved via row-level locks within each shard |
-| `architecture/services/room-gameplay.md` §10 | `POST /internal/push/{player_id}` on API Gateway | Implements the push-invalidation path required by the single-active-session invariant (DOMAIN_MODEL.md §PlayerSession, ADR-005) | ✅ Yes — the invariant is strengthened (passive-connection heartbeat check), not weakened |
-| `architecture/adr/ADR-004-timer-durability.md` | Challenge-window reconciliation sweep added to Consequences | Extends the existing reconciliation sweep (originally turn-timer only) to cover the 5-second challenge window | ✅ Yes — extends crash recovery without changing timer behavior |
-| `architecture/adr/ADR-005-session-invalidation-push.md` | Passive-connection heartbeat validation added to Consequences | Closes the passive-player window from 45s to 30s by adding outbound push validation | ✅ Yes — strengthens single-active-session; no domain invariant is relaxed |
-| `architecture/CONTAINER_VIEW.md` | Redis deployment model: separate instances instead of logical DBs | No design change — Redis key namespacing was already `identity:*`, `gameplay:*`, etc. The deployment model clarifies Cluster compatibility | ✅ Yes — no key names or patterns changed; only the instance topology |
-| `architecture/services/tournament.md` §5.2.1 | Pre-commit HTTP call failure recovery path documented | Documents the recovery path when `GameStarted` arrives for a game_id with no matching `match_games` row | ✅ Yes — no design command or event was changed; the reconciliation is an operational safety net |
-| `architecture/CAPACITY_SKETCH.md` | New document (mandatory deliverable §6.5) | No design changes; numbers derived from existing architecture specifications | N/A — new document, no prior design artifact to change |
-| `architecture/INTEGRATION_VIEW.md` | New document (mandatory deliverable §6.3) | No design changes; integrates existing architecture specifications into a single view | N/A — new document, no prior design artifact to change |
-| `architecture/services/ranking.md` | New service spec for the Ranking bounded context | Events consumed/produced match COMMANDS_EVENTS.md exactly: `GameCompleted` (casual Elo), `TournamentCompleted` (tournament Elo), `EloUpdated`, `EloReverted` | ✅ Yes — no new events; all event names and payloads match the design catalog |
-| `architecture/services/ranking.md` §4.4 | Added `moderation-events` topic consumption for `GameResultVoided` | `GameResultVoided` was already documented in COMMANDS_EVENTS.md as consumed by Ranking for Elo reversal; the architecture previously incorrectly routed it through `identity-events` — now correctly via `moderation-events` | ✅ Yes — the event and its handler are unchanged; only the Kafka topic routing is corrected |
-| `architecture/services/ranking.md` §5 | Elo formula aligned with CONSTRAINTS.md §5.2: pairwise multi-player Elo with 3-tier K-factors (<20→32, 20-99→16, 100+→12), performance bonus (+3), and starting Elo = 1000 | Constraints were already authoritative; the architecture spec had a simplified approximation | ✅ Yes — the domain invariant (forfeit = last place, abandoned = no Elo) is preserved |
-| `architecture/services/moderation.md` | New service spec for the Moderation/Admin bounded context | `GameResultVoided` matches COMMANDS_EVENTS.md §VoidGameResult; `SuspendPlayer`/`BanPlayer` are corrective commands referenced in FAILURE_PATHS.md | ✅ Yes — no new events; corrective commands are admin operations, not domain commands |
-| `architecture/services/moderation.md` §3.4 | Added `FlagGame` endpoint (player-facing, 5 flags/hour per user) | `FlagGame` was documented in COMMANDS_EVENTS.md §3.5; produces `GameFlagged` event on `moderation-events` | ✅ Yes — matches the documented command catalog |
-| `architecture/services/moderation.md` §5.2 | Added write-before-effect invariant explicit documentation | PLAN Phase 5 requirement: audit row must be written in same PostgreSQL transaction as corrective command dispatch | ✅ Yes — strengthens ordering guarantee |
-| `architecture/services/moderation.md` §7 | Added full rate limiting map and abuse escalation thresholds aligned with CONSTRAINTS.md §10 | Escalation thresholds now match: 5 violations/10min → warning, 3 warnings/24h → suspend 15min | ✅ Yes — implements documented abuse policy |
-| `architecture/services/moderation.md` §4.1 | `moderation-events` Kafka topic introduced for `GameResultVoided` and `GameFlagged` | Previously `GameResultVoided` was (incorrectly) routed through `identity-events`; new topic follows the one-topic-per-producing-context pattern (decision O9) | ✅ Yes — event semantics unchanged; only topic routing corrected |
-| `architecture/PLAN.md` | Redis deployment model note added | Functional key naming unchanged; only deployment topology clarified | ✅ Yes — no key collision risk introduced |
+| `architecture/services/room-gameplay.md` | Internal HTTP commands: `CreateRoom`, `AssignPlayersToRoom`, `ForceCompleteGame`, `StartNextGameInRoom` | Match aggregate's Bo3 sequencing (DOMAIN_MODEL.md) | Yes — internal RPCs, not new domain commands |
+| `architecture/services/room-gameplay.md` §6 | Challenge-window reconciliation sweep (every 2s) | 5-second challenge window timer durability (ADR-004, RULESET.md) | Yes — crash-recovery safety net |
+| `architecture/services/room-gameplay.md` §10 | Gameplay PostgreSQL sharding by `game_id % 16` | Infrastructure decision for GameSession persistence | Yes — per-game serialization preserved via row-level locks |
+| `architecture/services/room-gameplay.md` §10 | `POST /internal/push/{player_id}` on API Gateway | Single-active-session push-invalidation path (ADR-005) | Yes — invariant strengthened |
+| `architecture/adr/ADR-004-timer-durability.md` | Challenge-window reconciliation sweep in Consequences | Extends existing reconciliation to 5s challenge window | Yes — extends crash recovery |
+| `architecture/adr/ADR-005-session-invalidation-push.md` | Passive-connection heartbeat validation in Consequences | Closes passive-player window from 45s to 30s | Yes — strengthens single-active-session |
+| `architecture/CONTAINER_VIEW.md` | Redis deployment model: separate instances instead of logical DBs | Redis key namespacing unchanged; deployment topology clarified | Yes — no key names or patterns changed |
+| `architecture/services/tournament.md` §5.2.1 | Pre-commit HTTP call failure recovery path | Documents recovery when `GameStarted` arrives with no matching `match_games` row | Yes — operational safety net |
+| `architecture/CAPACITY_SKETCH.md` | New document (mandatory §6.5) | Numbers from existing architecture specs | N/A — new document |
+| `architecture/INTEGRATION_VIEW.md` | New document (mandatory §6.3) | Integrates existing specs | N/A — new document |
+| `architecture/services/ranking.md` | New service spec for Ranking context | Events match COMMANDS_EVENTS.md exactly | Yes — no new events |
+| `architecture/services/ranking.md` §4.4 | `moderation-events` topic consumption for `GameResultVoided` | Corrected routing from `identity-events` to `moderation-events` | Yes — event semantics unchanged; topic routing corrected |
+| `architecture/services/ranking.md` §5 | Elo formula aligned with CONSTRAINTS.md §5.2 | Constraints already authoritative; architecture had simplified approximation | Yes — domain invariant preserved |
+| `architecture/services/moderation.md` | New service spec for Moderation/Admin | Matches COMMANDS_EVENTS.md and FAILURE_PATHS.md | Yes — no new events |
+| `architecture/services/moderation.md` §5.2 | Write-before-effect invariant documented | Audit row in same transaction as corrective command | Yes — strengthens ordering guarantee |
+| `architecture/services/moderation.md` §7 | Rate limiting map aligned with CONSTRAINTS.md §10 | Escalation thresholds now match spec | Yes — implements documented policy |
+| `architecture/services/moderation.md` §4.1 | `moderation-events` Kafka topic for `GameResultVoided`, `GameFlagged` | One-topic-per-producing-context pattern (O9) | Yes — event semantics unchanged |
+| `architecture/PLAN.md` | Redis deployment model note | Functional key naming unchanged | Yes — no key collision risk |
 
 ---
 
-## 2a. Design Artifact Change — `GameCompleted` Payload
+## 4. Design Artifact Changed — `GameCompleted` Payload
 
-| Artifact | Change | Design Checkpoint reference | Architecture/integration constraint | Domain guarantee unchanged? |
+| Artifact | Change | Design Checkpoint reference | Architecture constraint | Domain guarantee unchanged? |
 |---|---|---|---|---|
-| `design/COMMANDS_EVENTS.md` §2.1 — `GameCompleted` event | Added field `outcome: completed\|abandoned`. `abandoned` is set by Room Gameplay when all remaining active players forfeited and no winner was determined; `completed` in all other cases. | Design Checkpoint §5 deliverable 4 — Event Catalog (`COMMANDS_EVENTS.md`). `GameCompleted` payload. | Ranking must detect whether an abandoned casual game should be excluded from Elo updates. Deriving this from `forfeited.size() == total_players` requires Ranking to know the original player count, which is not in the existing payload. An explicit `outcome` field is the minimal, unambiguous signal. | ✅ Yes — the invariant "no Elo for abandoned casual games" is *strengthened*: it now has a first-class payload signal rather than an inference rule over derived state. No other domain rule is changed. The `outcome = completed` value for normal games is semantically equivalent to the prior implicit assumption. |
+| `design/COMMANDS_EVENTS.md` §2.1 — `GameCompleted` | Added `outcome: completed\|abandoned` field | Del. 4 — Event Catalog | Ranking must detect abandoned casual games for Elo exclusion; deriving from `forfeited.size() == total_players` requires knowing original player count | Yes — invariant "no Elo for abandoned casual games" is *strengthened* with first-class payload signal |
 
 ---
 
-## 3. Design Artifacts Explicitly Unchanged
+## 5. Design Artifacts Explicitly Unchanged
 
 | Design artifact | Status | Notes |
 |---|---|---|
 | `design/GLOSSARY.md` | **Unchanged** | All terms used in architecture specs reference existing glossary entries |
-| `design/CONTEXT_MAP.md` | **Unchanged** | Six bounded contexts map directly to six service specs (Ranking and Moderation now have their own specs, consistent with the context map) |
-| `design/DOMAIN_MODEL.md` | **Unchanged** | `Match` aggregate behavior (Bo3 sequencing, timeout token) implemented by `tournament-service` internal logic; no aggregate boundary was crossed |
-| `design/COMMANDS_EVENTS.md` | **One field added** — see §2a above (`GameCompleted.outcome`). All other events unchanged. Internal HTTP commands (`CreateRoom`, `ForceCompleteGame`, `StartNextGameInRoom`, `POST /internal/push/{player_id}`) are implementation mechanisms, not new domain commands. |
-| `design/EVENT_FLOWS.md` | **Unchanged** | All flows in the architecture are traceable to documented event flows |
+| `design/CONTEXT_MAP.md` | **Two changes** — see §2 above (tie-break fix + Analytics extraction) |
+| `design/DOMAIN_MODEL.md` | **One change** — see §1 above (session ordering clarification) |
+| `design/COMMANDS_EVENTS.md` | **Two changes** — see §1 and §4 above (`PlayerSkipped.reason` + `GameCompleted.outcome`) |
+| `design/EVENT_FLOWS.md` | **Two changes** — see §1 above (reconnection privacy + tournament Elo separation) |
 | `design/CONSISTENCY_RECOVERY.md` | **Unchanged** | Idempotent consumer keys in architecture specs match documented dedup keys |
-| `design/FAILURE_PATHS.md` | **Unchanged** | Failure paths documented in architecture (timer reconciliation, pre-commit HTTP call recovery) are additive safety nets, not changes to documented failure handling |
+| `design/FAILURE_PATHS.md` | **Unchanged** | Architecture crash-recovery paths are additive safety nets |
+| `design/ASCII_FLOW.md` | **Unchanged** | |
+| `design/REQUIREMENTS_TRACEABILITY.md` | **Unchanged** | |
 
 ---
 
-## 4. Summary
+## 6. Summary
 
-**One design artifact was changed** (see §2a): `design/COMMANDS_EVENTS.md` — `GameCompleted` payload gains an `outcome: completed|abandoned` field. All other design artifacts are unchanged. The architecture adds:
+**Two design artifacts were changed** (see §1 and §2): `COMMANDS_EVENTS.md` and `CONTEXT_MAP.md`, plus clarifications to `EVENT_FLOWS.md` and `DOMAIN_MODEL.md`. All changes are traceable to evaluator feedback or architecture integration constraints. The architecture additionally introduces:
 
 1. **Internal RPC mechanisms** (`CreateRoom`, `ForceCompleteGame`, `StartNextGameInRoom`, `POST /internal/push/{player_id}`) that implement existing domain command semantics via HTTP.
 2. **Crash-recovery safety nets** (challenge-window reconciliation sweep, passive-connection heartbeat validation, pre-commit HTTP call reconciliation) that strengthen invariants without changing domain semantics.
 3. **Infrastructure decisions** (Redis instance topology, PostgreSQL sharding, API Gateway push endpoint) that are deployment-level, not domain-level.
-4. **New service specs** (Ranking, Moderation) for bounded contexts that were documented in the Design Checkpoint but did not yet have architecture specs.
+4. **New service specs** (Ranking, Moderation) for bounded contexts documented in the Design Checkpoint.
 5. **Mandatory deliverables** (CAPACITY_SKETCH.md, INTEGRATION_VIEW.md) required by §6.3 and §6.5.
 
 **No Design Checkpoint non-negotiable domain guarantee was weakened or dropped.**

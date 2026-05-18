@@ -145,6 +145,15 @@ All decisions are traceable to the plan in [PLAN.md](./PLAN.md) and the resolved
 ║  │              │  │              │  │ elo_records  │  │  (session inval.)    │    ║
 ║  │              │  │              │  │ admin_actions│  │                      │    ║
 ║  └──────────────┘  └──────────────┘  └──────────────┘  └──────────────────────┘    ║
+║  ┌──────────────┐  ┌──────────────────────┐                                        ║
+║  │ PostgreSQL   │  │ ClickHouse           │                                        ║
+║  │ (analytics)  │  │ (analytics)          │                                        ║
+║  │              │  │                      │                                        ║
+║  │ tournament_  │  │ game_events_raw      │                                        ║
+║  │ bracket      │  │ game_results         │                                        ║
+║  │              │  │ player_stats_mv      │                                        ║
+║  │              │  │ tournament_bracket_mv│                                        ║
+║  └──────────────┘  └──────────────────────┘                                        ║
 ║                                                                                       ║
 ║  Note: PostgreSQL instances may be separate servers or separate schemas on one       ║
 ║  server. No service queries another service's schema.                                ║
@@ -297,7 +306,7 @@ All decisions are traceable to the plan in [PLAN.md](./PLAN.md) and the resolved
 |---|---|
 | **Name** | `analytics-service` (query API) + `analytics-worker` (N consumer instances) |
 | **Context** | Analytics / Read Models |
-| **Technology** | Workers: JVM or Go; Store: ClickHouse 23+ (columnar, analytics-native; O8 decision); Query service: JVM/Go |
+| **Technology** | Workers: JVM or Go; Store: ClickHouse 23+ (columnar, analytics-native; O8 decision); Bracket store: PostgreSQL (`analytics` schema); Query service: JVM/Go |
 | **Primary responsibility** | Burst-absorbing projection of all `GameCompleted` events at round end; player stats; bracket/standings views; leaderboard display copies |
 | **Instances** | Workers: N instances (e.g., 20 workers × 5 partitions each = 100 partitions coverage); analytics-service: horizontally scalable read API |
 | **Owns** | `player_statistics`, `tournament_bracket`, `round_standings`, `game_history`, `leaderboard_display` tables |
@@ -350,6 +359,7 @@ All decisions are traceable to the plan in [PLAN.md](./PLAN.md) and the resolved
 | Redis spectator-streams instance | Redis 7+ (standalone or Sentinel pair; sized for ~6GB at 100K games) | `spectator:stream:{game_id}` — privacy-filtered game event fan-out with MAXLEN ~200 history; XREAD BLOCK for live delivery; EXPIRE on GameCompleted + 24h | `noeviction` (streams must not be evicted mid-game; deleted via EXPIRE) |
 
 > **Note on Redis Cluster:** Redis Cluster supports only logical DB 0; multiple logical databases (SELECT N) are not available in cluster mode. Each functional Redis tier is therefore a **separate standalone instance or Sentinel-managed pair**, not a shared cluster with multiple logical DBs. Key-prefix namespacing (`identity:*`, `gameplay:*`, etc.) is still applied within each instance to aid observability but is not relied on for isolation — isolation is physical (separate instances). Redis Cluster may be used within each individual instance group for intra-instance HA but is not used to share a single cluster across tiers.
+
 | Kafka | Apache Kafka (or Confluent) | All async cross-context event delivery | Per-topic retention policies |
 | PostgreSQL | PostgreSQL 15+ | All durable aggregate state and immutable logs | N/A (durable) |
 | ClickHouse | ClickHouse 23+ | Analytics burst-absorbing columnar store; 100K+ rows/s batch insert; materialized views for aggregations | N/A (append-only) |

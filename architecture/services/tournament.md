@@ -283,6 +283,8 @@ Loop every 1ms:
 
 This rate limit (1,000 rooms/s) means all 100K rooms enter the `tournament-kickoff` topic within ~100 seconds. Room Gameplay workers begin consuming immediately, so effective lag between first and last room creation is minimized by the consumer parallelism.
 
+> **Margin note:** 100 seconds to enqueue all rooms leaves ~20 seconds of headroom against a 120-second target before the first lobby timers (10s) would expire on early-created rooms. If the kickoff producer falls behind or rooms require DLQ retry, the margin narrows. Mitigations: (a) the rate limit can be raised to 1,500 rooms/s (67 seconds total) if the PostgreSQL insert throughput on the consumer side allows it; (b) lobby timers are started only after the consumer commits the room, so late-arriving rooms simply get later timer starts — the system remains correct, just with staggered game-start times within a round.
+
 ### 6.3 Room Gameplay Consumption
 
 Room Gameplay's `tournament-kickoff-consumer-worker` processes `TournamentRoomAssigned` events:
@@ -411,6 +413,21 @@ The `match-timer-worker` receives a keyspace notification for `tournament:match-
 ```
 
 **Idempotency:** The `timeout_token` field in PostgreSQL is the fence. If the token in Redis does not match the DB row (e.g., match was already completed and a new match started with a different token), the handler exits without action.
+
+### Fallback: Room Gameplay Unavailable at Timeout
+
+If `ForceCompleteGame` fails after 3 retries (e.g., Room Gameplay is restarting or its PostgreSQL primary is failing over), tournament-service escalates:
+
+1. Log the failure to `admin_actions` with `action_type = 'match_timeout_resolution_failed'`.
+2. Mark the match as `status = 'timed_out_pending_resolution'`.
+3. Every 30 seconds, a background sweep re-attempts `ForceCompleteGame` with the same `idempotency_key` until it succeeds.
+4. If the match remains unresolved after 5 minutes (well beyond any reasonable Room Gameplay outage), tournament-service resolves the match administratively:
+   - Compute standings from the last known `match_standings` snapshot.
+   - Advance the player with the fewest remaining cards (or by RNG tie-break if equal).
+   - Emit `MatchTimeoutReached`, `MatchCompleted`, and `AdvancementResolved` without a final `GameCompleted` from Room Gameplay.
+   - Room Gameplay will eventually receive the `ForceCompleteGame` success (or a duplicate no-op); the game is marked as resolved and no further events are produced.
+
+This fallback preserves tournament progression even during a partial Room Gameplay outage. The 5-minute administrative window is long enough for normal failover (~60s RTO) but short enough to prevent a single stalled match from blocking an entire round indefinitely.
 
 ---
 

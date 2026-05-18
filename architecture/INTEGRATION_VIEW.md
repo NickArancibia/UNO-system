@@ -18,7 +18,11 @@ This document specifies the communication patterns between every pair of compone
 
 All game events for a given `game_id` are produced to the `game-events` Kafka topic partitioned by `game_id`. This guarantees **total order per game**: all consumers (Ranking, Spectator View, Tournament Orchestration, Analytics) receive events for the same game in the order they were committed.
 
-For active players, ordering is naturally preserved by the synchronous request-response path: the player sends a command, receives the `200 OK` response (with events), and the gateway pushes those events to the player's WebSocket before any Kafka consumer has seen them. Spectators receive events via Redis Streams (`XREAD BLOCK`), which delivers events in `XADD` order per stream.
+For active players, ordering is naturally preserved by the synchronous request-response path: the player sends a command, receives the `200 OK` response (with events), and the gateway pushes those events to the player's WebSocket before any Kafka consumer has seen them.
+
+**Broadcast to non-acting players in the same game:** The `200 OK` response from Room Gameplay includes the full event payload and a `notify_player_ids` list (all game participants). The API Gateway uses its in-memory connection registry to push the event to every other active player in the same game immediately, without waiting for Kafka. This keeps the hot-path latency low (sub-100 ms end-to-end) and avoids N individual HTTP calls from Room Gameplay to the Gateway. If a player is not connected on the Gateway instance handling the response, the event is silently skipped; the player will catch up on reconnect via the same `GET /v1/games/{game_id}/state` REST fallback used for reconnect snapshots.
+
+Spectators receive events via Redis Streams (`XREAD BLOCK`), which delivers events in `XADD` order per stream.
 
 ### 1.3 Session Invalidation and Connection Termination
 
@@ -73,13 +77,13 @@ Every significant component-to-component integration is listed below. Each row s
 | From → To | Pattern | Rationale | Failure semantics |
 |---|---|---|---|
 | Client → API Gateway | WebSocket (wss://) | Full-duplex bidirectional; single persistent connection for all game commands and event pushes | Gateway closes connection on auth failure or rate limit; client reconnects |
-| API Gateway → room-gameplay-service | HTTP POST (sync, mTLS) | One command per request; response carries events synchronously | Circuit breaker: if Room Gameplay is unavailable, Gateway returns `503` to client; client retries with backoff. Timeouts: 5s connect, 10s read. |
+| API Gateway → room-gameplay-service | HTTP POST (sync, mTLS over HTTP/2) | One command per request; response carries events synchronously; HTTP/2 multiplexing reduces connection count between Gateway and Room Gameplay | Circuit breaker: if Room Gameplay is unavailable, Gateway returns `503` to client; client retries with backoff. Timeouts: 5s connect, 10s read. |
 
 ### 3.2 Gateway → Room Gameplay (outbound push path)
 
 | From → To | Pattern | Rationale | Failure semantics |
 |---|---|---|---|
-| room-gameplay-service → API Gateway | HTTP POST `/internal/push/{player_id}` (mTLS, internal) | Server-initiated WebSocket push for reconnect snapshots and timer-expiry side-effect broadcasts; Gateway looks up player's connection in in-memory registry and writes to WebSocket | `404` response = player not connected on that gateway instance (load balancer may have routed the push to a different instance than the one holding the connection). Room Gameplay treats `404` as a no-op and does not retry. **Client responsibility:** if the client reconnects but receives no server-pushed snapshot within 2 seconds, it must proactively call `GET /v1/games/{game_id}/state` to fetch the current `PublicGameView`. This REST fallback is always available as an explicit catch-up path. `200` = snapshot delivered. |
+| room-gameplay-service → API Gateway | HTTP POST `/internal/push/{player_id}` (mTLS, internal) | Server-initiated WebSocket push for reconnect snapshots, timer-expiry side-effect broadcasts, and targeted game-event pushes when the Gateway fan-out path is unavailable (e.g., player on a different Gateway instance); Gateway looks up player's connection in in-memory registry and writes to WebSocket | `404` response = player not connected on that gateway instance (load balancer may have routed the push to a different instance than the one holding the connection). Room Gameplay treats `404` as a no-op and does not retry. **Client responsibility:** if the client reconnects but receives no server-pushed snapshot within 2 seconds, it must proactively call `GET /v1/games/{game_id}/state` to fetch the current `PublicGameView`. This REST fallback is always available as an explicit catch-up path. `200` = snapshot delivered. |
 
 ### 3.3 Gateway → Identity/Session (auth path)
 
@@ -190,7 +194,7 @@ Every significant component-to-component integration is listed below. Each row s
 |---|---|---|---|
 | Kafka `game-events` → analytics-game-worker `analytics-game-cg` | At-least-once consumer; dedicated group (isolated from other consumers) | Isolated consumer group: Analytics lag does not affect Ranking, Spectator, or Tournament | ClickHouse insert failures → worker pauses, retries with backoff, Kafka offsets not committed. Lag drains when ClickHouse recovers. No backpressure on Room Gameplay. |
 
-### 3.19 StartNextGameInRoom — pre-commit HTTP call
+### 3.21 StartNextGameInRoom — pre-commit HTTP call
 
 | From → To | Pattern | Rationale | Failure semantics |
 |---|---|---|---|

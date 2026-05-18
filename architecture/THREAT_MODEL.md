@@ -152,7 +152,21 @@ This document applies a STRIDE analysis to the most security-sensitive surfaces 
 
 **Mitigation:**
 - All connections are over `wss://` (TLS). The load balancer enforces TLS 1.2 minimum; TLS 1.3 preferred.
-- Certificate pinning is optional for native clients; browser clients rely on standard CA infrastructure.
+- Certificate pinning is **recommended** for native (mobile/desktop) clients. In a competitive game where MITM access gives a card-reading advantage (reading spectator events or intercepting another player's resync snapshot), pinning raises the bar from generic TLS interception to device-level compromise. Browser clients rely on standard CA infrastructure; pinning is not applicable.
+
+#### I4. Kafka Broker Compromise — Event Replay or Forgery
+
+**Threat:** An attacker gains access to the Kafka broker (via compromised broker credentials or a broker-pod exploit) and publishes forged events (e.g., `GameCompleted` with manipulated outcomes) or replays previously consumed events to trigger duplicate Elo updates.
+
+**Affected surface:** All downstream consumers (Ranking, Tournament Orchestration, Spectator View, Analytics).
+
+**Mitigation:**
+- Per-service mTLS producer credentials: only `room-gameplay-service` can produce to `game-events`; only `tournament-service` can produce to `tournament-events`. A compromised broker cannot produce events without a valid client certificate.
+- Kafka ACLs restrict producers to their designated topics; cross-topic publishing is blocked at the broker level.
+- Consumers apply idempotency checks using `(game_id, player_id)` or `(tournament_id)` keys, so replayed events are silently deduplicated — the replay does not cause duplicate Elo updates or duplicate tournament advancements.
+- Downstream consumers validate event payload coherence: Ranking rejects `GameCompleted` events referencing unknown `game_id` values (sends to DLQ).
+
+**Residual risk:** A broker with valid producer credentials could forge events that pass idempotency checks (novel `game_id` values). Mitigation: event payload signing (HMAC or payload hash included in the event, verified by consumers using a shared secret) would detect tampering, but adds operational complexity. Current mitigation relies on broker access control + regular credential rotation.
 
 ---
 

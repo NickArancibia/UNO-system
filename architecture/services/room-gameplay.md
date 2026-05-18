@@ -414,7 +414,7 @@ The gameplay database is sharded by `game_id % 16` (16 shards). Each shard is an
 
 **Shard-local tables:** `game_sessions`, `game_events`, `outbox`, `rooms` — all include `game_id` (or `room_id`, which is derived from `game_id` / deterministically assigned) as a leading column in their primary key, enabling shard-local queries.
 
-**Unsharded table:** `matchmaking_queue` remains on shard 0 (or a dedicated small instance) — write volume is low (players joining/leaving Quick Play) and the `SELECT FOR UPDATE SKIP LOCKED` pattern requires a single table.
+**Unsharded table:** `matchmaking_queue` remains on shard 0 (or a dedicated small instance) — write volume is low (players joining/leaving Quick Play, typically <1% of game command rate) and the `SELECT FOR UPDATE SKIP LOCKED` pattern requires a single table. At peak, queue operations are ~1,000 TPS (registration surges), well within a single PostgreSQL instance's capacity. If queue contention ever becomes a bottleneck, the table can be partitioned by `player_id % N` with a lightweight coordinator that routes queue polls to the appropriate partition.
 
 **Per-shard TPS:** 100,000 / 16 ≈ 6,250 TPS per shard. A well-tuned PostgreSQL instance handles this with SSD-backed storage and appropriate `shared_buffers` / `work_mem` settings.
 

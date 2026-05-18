@@ -248,12 +248,15 @@ The `spectator-game-consumer-worker` applies the privacy whitelist filter before
 
 **ClickHouse** (dedicated cluster, `analytics` database).
 
-| Table | Purpose | Insert pattern |
-|---|---|---|
-| `game_events_raw` | Append-only raw event log: `game_id`, `event_type`, `player_id`, `tournament_id` (nullable), `payload` (JSON), `occurred_at`. | Batch INSERT every 500ms from consumer workers. |
-| `game_results` | Flattened game outcomes: `game_id`, `winner_player_id`, `duration_seconds`, `player_count`, `game_type`, `tournament_id`, `round_id`. | Derived from `GameCompleted`; batch insert. |
-| `player_stats_mv` | ClickHouse Materialized View: win rate, games played, cumulative points per `player_id`. | Maintained automatically on insert to `game_events_raw`. |
-| `tournament_bracket_mv` | ClickHouse Materialized View: round-by-round advancement tree. | Updated as `MatchCompleted` events arrive. |
+**PostgreSQL** (dedicated instance, `analytics` schema) — used for `tournament_bracket`, which has a relational tree structure (rounds → rooms → matches → games) better suited to relational queries than columnar storage.
+
+| Table | Store | Purpose | Insert pattern |
+|---|---|---|---|
+| `game_events_raw` | ClickHouse | Append-only raw event log: `game_id`, `event_type`, `player_id`, `tournament_id` (nullable), `payload` (JSON), `occurred_at`. | Batch INSERT every 500ms from consumer workers. |
+| `game_results` | ClickHouse | Flattened game outcomes: `game_id`, `winner_player_id`, `duration_seconds`, `player_count`, `game_type`, `tournament_id`, `round_id`. | Derived from `GameCompleted`; batch insert. |
+| `player_stats_mv` | ClickHouse | Materialized View: win rate, games played, cumulative points per `player_id`. | Maintained automatically on insert to `game_events_raw`. |
+| `tournament_bracket_mv` | ClickHouse | Materialized View: round-by-round advancement tree. | Updated as `MatchCompleted` events arrive. |
+| `tournament_bracket` | PostgreSQL | Relational bracket tree (rounds → rooms → matches → games). Better suited to relational queries than columnar. | UPSERT by `match_id` on `MatchCompleted`. |
 
 ### 6.2 Consistency Model
 

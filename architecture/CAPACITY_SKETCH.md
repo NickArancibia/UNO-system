@@ -89,7 +89,7 @@ The gameplay database is sharded by `game_id % N` where **N = 16** (a power of t
 
 | Shard | Tables owned | Connection routing |
 |---|---|---|
-| shard_0 … shard_15 | `game_sessions`, `game_events`, `outbox`, `rooms` (filtered by game_id prefix / room_id prefix) | API Gateway or service-level router routes each request based on提取 `game_id` from URL path |
+| shard_0 … shard_15 | `game_sessions`, `game_events`, `outbox`, `rooms` (filtered by game_id prefix / room_id prefix) | API Gateway or service-level router extracts `game_id` from URL path and routes to the correct shard via `game_id % 16` |
 
 **Routing:** Each `room-gameplay-service` pod connects to all 16 shards but processes a given game on exactly one shard (determined by `game_id % 16`). The `game_id` is included in every command URL (`POST /v1/games/{game_id}/commands/play-card`), so the Gateway or an internal routing layer can hash-route the request to any pod — any pod can reach any shard.
 
@@ -113,6 +113,8 @@ The gameplay database is sharded by `game_id % N` where **N = 16** (a power of t
 | Identity | ~5K TPS (login surge) | No | Single instance; read-heavy (JWT validation hits Redis cache) |
 | Tournament + Ranking | ~10K TPS (round-end burst) | No | Single instance; scaling via row-lock isolation |
 | Spectator (PostgreSQL) | ~1K TPS (append-only logs) | No | Single instance; append-only workload |
+| Analytics (PostgreSQL) | ~100 TPS (bracket UPSERTs) | No | Single instance; minimal write volume |
+| Analytics (ClickHouse) | ~1,667 rows/s (round-end burst) | No | 2-node cluster; burst-absorbent |
 
 ---
 
@@ -185,3 +187,16 @@ The 10:1 spectator-to-player ratio means:
 - At 10M connections, a CDN/edge layer (e.g., Cloudflare Workers, regional edge proxies) is recommended to terminate a large fraction of connections before they reach the spectator-service instances. The architecture supports this: the spectator-service pushes to Redis Streams; edge nodes can subscribe to the same streams and push to locally-connected spectators. This is an optimization for >5M connections and is not required at lower scale.
 
 **Capping:** If edge infrastructure is unavailable, the spectator-service can cap at ~5M connections with ~50–100 instances at ~100K connections each. Beyond this, spectators experience queueing or are served from cached BracketView read models rather than live streams.
+
+---
+
+## 11. Multi-Region Note (Out of Scope for Initial Deployment)
+
+The capacity numbers above assume a single-region deployment with a single Kafka cluster, Redis cluster, and PostgreSQL primary set. A truly global player base (sub-100 ms latency for game commands from any continent) would require:
+
+- **Regional game pods:** `room-gameplay-service` pods in edge regions (EU, NA, APAC) with players routed to their nearest region. Game commands stay within the region; cross-region latency is eliminated for the hot path.
+- **Kafka MirrorMaker 2** (or equivalent) for async replication of `game-events`, `tournament-events`, and `ranking-events` between regions. Tournament orchestration and Ranking can run in a single central region because their workloads are lower-frequency.
+- **Redis Global Datastore** (e.g., Redis Enterprise CRDT, or regional read replicas with write-forwarding to the primary) for `valid_sessions_from`, leaderboards, and spectator streams.
+- **PostgreSQL read replicas** in each region for analytics queries and game-log reads; writes (game commands) still route to the shard primary.
+
+The current architecture supports adding regional edges without changing service boundaries or event contracts: the API Gateway becomes region-aware, and the `game-events` topic gains a regional prefix (e.g., `game-events-eu`). All aggregates, invariants, and interfaces remain unchanged.

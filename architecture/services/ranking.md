@@ -79,7 +79,6 @@ Topic partitioned by `game_id`; 100 partitions; 20 consumer instances.
 | Event | Idempotency key | Action |
 |---|---|---|
 | `GameCompleted` | `game_id` | If `game_type = 'casual'` AND `outcome = 'completed'`: compute casual Elo delta for all players (forfeited players receive rank N — last place). If `game_type = 'casual'` AND `outcome = 'abandoned'`: skip Elo entirely (no winner was determined). Tournament games (`game_type = 'tournament'`) do **not** trigger casual Elo updates regardless of `outcome`. |
-| `GameResultVoided` | `game_id` | Reverse the Elo delta applied for this game. Emit one `EloReverted` per affected player. Idempotent: if `game_id` was already reversed, skip. |
 | `PlayerRegistered` | `player_id` | Initialize `EloRecord` with starting Elo (1,000) for the new player. |
 
 ### 4.3 Events Consumed from `tournament-events`
@@ -206,7 +205,7 @@ At 100K games × ~5 players average = 500K row updates in 60 seconds ≈ 8,300 T
 
 ```sql
 CREATE TABLE elo_records (
-    player_id           UUID PRIMARY KEY REFERENCES player_profiles(player_id),
+    player_id           UUID PRIMARY KEY,  -- Logical reference to identity.player_profiles; enforced at application level via PlayerRegistered event
     casual_elo          REAL NOT NULL DEFAULT 1000.0,
     tournament_elo      REAL NOT NULL DEFAULT 1000.0,
     casual_games_played  INTEGER NOT NULL DEFAULT 0,

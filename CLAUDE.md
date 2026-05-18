@@ -24,7 +24,6 @@ This checkpoint is about **solution architecture** (services, boundaries, integr
 **Traceability** to the Design Checkpoint is **not** a vibe check: public async contracts (topic/queue names, event types, payload ownership) must **match** documented **domain events**—or **state the delta** (rename, split, merge) and record it in CHANGELOG-design.md (§6.2). Synchronous APIs (resources, RPCs, main operations) must **map** to the **command** (and query) catalog, or document the delta. A reviewer should be able to trace each integration row (§6.3) to a named command or event in the design package.
 
 **Invariants that must have an explicit architectural home:**
-
 - **Sequence-number enforcement** — where stale or replayed commands/events are rejected (service and layer).
 - **Log-before-broadcast atomicity** — authoritative writes persisted before clients see updates (e.g., outbox, transactional boundary).
 - **5-second Uno! challenge window** — timer ownership, expiry handling, and failure behavior.
@@ -164,7 +163,7 @@ Order-of-magnitude reasoning at minimum:
 The completed DDD design lives in the `/design` directory and the domain rules live in `/specs`. Both must remain consistent with the architecture:
 
 - **`design/GLOSSARY.md`** — Authoritative ubiquitous language.
-- **`design/CONTEXT_MAP.md`** — 6 bounded contexts and their relationships.
+- **`design/CONTEXT_MAP.md`** — 7 bounded contexts and their relationships (Analytics extracted as a separate context during architecture work; see CHANGELOG-design.md §2).
 - **`design/DOMAIN_MODEL.md`** — 9 aggregates, entities, value objects, and invariants.
 - **`design/COMMANDS_EVENTS.md`** — Full command and event catalog with preconditions, payloads, causality, and idempotency.
 - **`design/EVENT_FLOWS.md`** — End-to-end event flow narratives (room lifecycle, tournament round, Elo, disconnection).

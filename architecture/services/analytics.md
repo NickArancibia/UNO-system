@@ -64,7 +64,7 @@ Each worker accumulates incoming events in an in-memory buffer and flushes to Cl
 
 | Property | Value |
 |---|---|
-| **Technology** | JVM or Go service; reads from ClickHouse and PostgreSQL |
+| **Technology** | JVM or Go service; Primary store: ClickHouse 23+ (columnar, analytics-native; O8 decision); Bracket store: PostgreSQL (`analytics` schema) for relational tree queries |
 | **Primary responsibility** | Read-only query API for all analytics read models |
 | **Instances** | Horizontally scalable; stateless |
 
@@ -169,7 +169,7 @@ AS SELECT
   pr.player_id,
   game_type,
   countState()         AS games_played,
-  sumState(pr.forfeited = false AND pr.placement = 1 ? 1 : 0) AS wins,
+  sumState(if(pr.forfeited = false AND pr.placement = 1, 1, 0)) AS wins,
   sumState(pr.cards_remaining)  AS total_cards_remaining,
   sumState(pr.elo_delta)        AS total_elo_delta
 FROM game_results
