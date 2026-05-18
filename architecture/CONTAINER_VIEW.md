@@ -83,9 +83,10 @@ All decisions are traceable to the plan in [PLAN.md](./PLAN.md) and the resolved
 ║  │  │                          workers (surge fan-out at round kickoff)           │  ║
 ║  │  │  identity-events      — partitioned by player_id                           │  ║
 ║  │  │  ranking-events       — partitioned by player_id                           │  ║
+║  │  │  moderation-events    — partitioned by player_id or game_id                │  ║
 ║  │  │                                                                              │  ║
 ║  │  │  Retention: 7 days (game-events, tournament-kickoff);                       │  ║
-║  │  │             30 days (tournament-events/identity/ranking)                    │  ║
+║  │  │             30 days (tournament-events/identity/ranking/moderation)         │  ║
 ║  │  └───────────┬────────────────────────────────────────────────────────────────┘  ║
 ║  │              │                                                                    ║
 ║  │  ┌───────────┼────────────────────────────────────────────────────────────────┐  ║
@@ -155,8 +156,12 @@ All decisions are traceable to the plan in [PLAN.md](./PLAN.md) and the resolved
 ║  │              │  │ tournament_bracket_mv│                                        ║
 ║  └──────────────┘  └──────────────────────┘                                        ║
 ║                                                                                       ║
-║  Note: PostgreSQL instances may be separate servers or separate schemas on one       ║
-║  server. No service queries another service's schema.                                ║
+║  Note: PostgreSQL instances may be separate servers or logically separate schemas    ║
+║  on one server. Tournament, Ranking, Spectator, and Moderation share one            ║
+║  PostgreSQL cluster for infrastructure economy; each context uses a dedicated        ║
+║  schema and a schema-scoped connection user — cross-schema SELECT/INSERT is         ║
+║  prohibited at the database permission level. No service queries another            ║
+║  service's schema.                                                                   ║
 ╚══════════════════════════════════════════════════════════════════════════════════════╝
 ```
 
@@ -171,7 +176,7 @@ All decisions are traceable to the plan in [PLAN.md](./PLAN.md) and the resolved
 | **Name** | `api-gateway` |
 | **Context** | Cross-cutting (not owned by any single bounded context) |
 | **Technology** | Custom Go/Java service, or configurable gateway (Kong + custom plugin for WebSocket session management) |
-| **Primary responsibility** | Single entry point for all client traffic; TLS termination; JWT verification; rate limiting; WebSocket lifecycle management; session-invalidation push path |
+| **Primary responsibility** | Single entry point for all client traffic; TLS termination; JWT verification; rate limiting; WebSocket lifecycle management; per-game sticky routing (load balancer hashes on `game_id`); session-invalidation push path |
 | **Instances** | Horizontally scalable; stateless per request (session state in Redis) |
 | **Trust boundary** | Public-facing; all input must be treated as untrusted |
 | **Owns** | WebSocket connection registry (in-memory per instance, keyed by `player_id`); no durable state |

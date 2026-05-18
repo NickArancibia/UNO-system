@@ -250,7 +250,7 @@ Timer keys are set with `SETNX` (NX flag): if the key already exists, the timer 
 | Turn timer | `gameplay:turn-timer:<game_id>` | 45,000 ms | After each `TurnAdvanced` (including game start) | Turn advances normally (Lua conditional DEL) | Handler acquires row lock → validates token → issues `TurnTimedOut` command → `PlayerForfeited` (AFK) or turn skipped | `(game_id, timer_token)` — stale token = no-op |
 | Uno! challenge window | `gameplay:challenge:<game_id>:<state_version>:uno` | 5,000 ms | On `ChallengeWindowOpened` (Uno! type) | `ChallengeWindowClosed` event committed | Handler acquires row lock → validates window still open → issues `ChallengeWindowExpired` → `PenaltyCardsDrawn` (2) to target player if Uno! was not called | `(game_id, state_version, window_type)` |
 | WD4 challenge window | `gameplay:challenge:<game_id>:<state_version>:wdf` | 5,000 ms | On `ChallengeWindowOpened` (WD4 type) | `ChallengeWindowClosed` event committed | Handler acquires row lock → validates window still open → issues `ChallengeWindowExpired` → `PenaltyCardsDrawn` (4) to next player (waived challenge) | `(game_id, state_version, window_type)` |
-| Lobby timer | `gameplay:lobby-timer:<room_id>` | Configurable (default 5 min, reduced to 10s at max capacity) | On `LobbyTimerStarted` | N/A (always runs to expiry) | Room Gameplay checks player count: ≥2 → `GameStarted`; <2 → `RoomCancelled` | `room_id` + room status check |
+| Lobby timer | `gameplay:lobby-timer:<room_id>` | Configurable (default 5 min, reduced to 10s at max capacity) | On `LobbyTimerStarted` | N/A (always runs to expiry) | Room Gameplay checks player count: ≥2 → `GameStarted`; <2 → `RoomCancelled` | `room_id` + room status check; startup sweep re-arms or fires expired timers on recovery (see below) |
 | Distributed lock (lobby start) | `gameplay:lobby-lock:<room_id>` | 10,000 ms | Before starting lobby timer (SETNX) | On lock release (Lua conditional DEL) | Lock TTL is safety-net only; the DB status column is the fence | N/A |
 
 ### Crash Behavior for Timer Node Failure
@@ -323,6 +323,33 @@ CREATE INDEX ON game_sessions (challenge_window_open)
 ```
 This column is set to `true` on `ChallengeWindowOpened` commit and `false` on
 `ChallengeWindowClosed` commit, inside the same transaction as the state update.
+
+**Lobby-timer startup sweep:**
+
+On `room-gameplay-service` startup (before accepting requests), the service queries for rooms
+that had a running lobby timer and re-arms or fires them:
+
+```sql
+SELECT room_id, lobby_started_at, lobby_duration_ms
+FROM rooms
+WHERE status = 'waiting'
+  AND lobby_started_at IS NOT NULL
+```
+
+For each row:
+```
+remaining_ttl_ms = (lobby_started_at + lobby_duration_ms) - now_ms()
+
+IF remaining_ttl_ms > 0:
+    SET gameplay:lobby-timer:<room_id} "<lobby-uuid>" PX {remaining_ttl_ms} NX
+    -- NX: only sets if key does not exist (another instance may have already re-armed it)
+ELSE:
+    -- Timer expired while service was down; fire the expiry handler immediately
+    -- Handler checks player count: ≥2 → GameStarted; <2 → RoomCancelled (idempotent by room status)
+    issue_lobby_timer_expired(room_id)
+```
+
+This covers the lobby timer's up-to-5-minute TTL gap (much longer than turn or challenge timers), which would otherwise leave stale `waiting` rooms indefinitely after a process restart.
 
 ---
 

@@ -15,11 +15,11 @@ Spectator View is a **pure read-side context**. It accepts no commands from clie
 - `PublicGameLog` — immutable, sealed record of a completed game (post-game hand reveal included); stored in PostgreSQL.
 - `BracketView` — tournament bracket and round-by-round standings; stored in Redis (live) and PostgreSQL (persistent).
 - `SpectatorRoomList` — list of joinable rooms with status; stored in Redis.
-- `LeaderboardView` — display copy of Elo rankings; stored in Redis Sorted Set (updated from `ranking-events`).
+- `LeaderboardView` — read-only view of Elo rankings; served from the authoritative `ranking:leaderboard:casual` / `ranking:leaderboard:tournament` sorted sets owned by Ranking.
 
 **Does NOT own:**
 - `GameSession` or any game write state (owned by Room Gameplay).
-- `EloRecord` (owned by Ranking). The leaderboard here is a display copy.
+- `EloRecord` or leaderboard sorted sets (owned by Ranking; Spectator View reads without writing).
 - Tournament lifecycle state (owned by Tournament Orchestration).
 - Any player hand data at any time during an in-progress game.
 
@@ -73,7 +73,7 @@ Spectator View is a **pure read-side context**. It accepts no commands from clie
 | **Consumer group** | `spectator-ranking-cg` |
 | **Topic** | `ranking-events` |
 | **Instances** | 3–5 |
-| **Primary responsibility** | Update `LeaderboardView` (Redis Sorted Set) on `EloUpdated`, `TournamentEloUpdated`, `EloReverted` |
+| **Primary responsibility** | Push leaderboard update notifications to connected spectator WebSocket clients on `EloUpdated`, `TournamentEloUpdated`, `EloReverted`; no ZADD (ranking-service maintains the authoritative sorted sets at `ranking:leaderboard:casual` / `ranking:leaderboard:tournament`) |
 
 ---
 
@@ -237,12 +237,10 @@ public_game_logs (
 
 ### 5.5 LeaderboardView
 
-**Store:** Redis Sorted Sets `ranking:leaderboard:casual` and `ranking:leaderboard:tournament` (shared with Ranking context; Spectator writes only to its own copy — `spectator:leaderboard:casual`).
+**Store:** Redis Sorted Sets `ranking:leaderboard:casual` and `ranking:leaderboard:tournament`, owned and written exclusively by `ranking-service` (Leaderboard Redis instance). Spectator View reads directly from these authoritative sorted sets — no display copy is maintained.
 
-> Note: The authoritative leaderboard sorted sets are managed by `ranking-service`. Spectator View maintains its own display-copy in `spectator:leaderboard:casual` to avoid cross-context data access. On `EloUpdated`, `spectator-ranking-consumer-worker` writes to this copy.
-
-**TTL:** No TTL (noeviction policy; always-available display read model).  
-**Query:** `ZRANGE spectator:leaderboard:casual 0 99 REV WITHSCORES` for top-100.
+**TTL:** No TTL (noeviction policy on Leaderboard Redis instance).  
+**Query:** `ZRANGE ranking:leaderboard:casual 0 99 REV WITHSCORES` for top-100.
 
 ---
 
@@ -284,9 +282,9 @@ public_game_logs (
 
 | Event | Action |
 |---|---|
-| `EloUpdated` | Update `spectator:leaderboard:casual` sorted set |
-| `TournamentEloUpdated` | Update `spectator:leaderboard:tournament` sorted set |
-| `EloReverted` | Re-apply correct Elo delta to leaderboard sorted set |
+| `EloUpdated` | Push leaderboard update notification to connected spectator clients subscribed to leaderboard updates |
+| `TournamentEloUpdated` | Push tournament leaderboard update notification to connected spectator clients |
+| `EloReverted` | Push corrective leaderboard notification to connected spectator clients |
 
 ### 6.4 From `moderation-events` (consumer group `spectator-moderation-cg`)
 
@@ -371,7 +369,7 @@ Room Gameplay         Kafka            spectator-game-         Redis            
 |---|---|---|---|
 | Redis (Streams) | `spectator:stream:{game_id}` | Eventual (consumer lag ≤1s) | game duration + 24h; MAXLEN ~200 |
 | Redis (Hashes) | `spectator:gameview:{game_id}`, `spectator:roomlist:{room_id}` | Eventual | game/room duration + 24h |
-| Redis (Sorted Sets) | `spectator:leaderboard:casual`, `spectator:leaderboard:tournament` | Eventual | noeviction (perpetual) |
+| Redis (Sorted Sets) | `ranking:leaderboard:casual`, `ranking:leaderboard:tournament` (read-only; owned by Ranking) | Eventual | noeviction (perpetual) |
 | PostgreSQL | `public_game_logs`, `bracket_views` | Eventual (append by consumer) | Indefinite (audit record) |
 
 **No shared database** with Room Gameplay. The PostgreSQL `spectator` schema is separate from `gameplay`, `tournament`, and `identity` schemas.

@@ -15,11 +15,11 @@ Analytics is a **pure read-side context**. It accepts no commands from clients a
 - `tournament_bracket` — full bracket structure with room assignments and match results.
 - `round_standings` — per-round player rankings within a tournament.
 - `game_history` — per-player list of completed games with outcome and Elo delta.
-- `leaderboard_display` — display copy of Elo leaderboard, refreshed from `ranking-events`.
+- `elo_history` — append-only record of Elo updates and reversals per player (historical log, not a live leaderboard).
 
 **Does NOT own:**
 - `GameSession` or game write state (owned by Room Gameplay).
-- `EloRecord` (owned by Ranking); leaderboard here is a display copy.
+- `EloRecord` or leaderboard sorted sets (owned by Ranking; Analytics reads `ranking:leaderboard:casual` directly for query responses without maintaining a copy).
 - Tournament lifecycle decisions (owned by Tournament Orchestration).
 - Spectator projection read models (owned by Spectator View).
 
@@ -58,7 +58,7 @@ Each worker accumulates incoming events in an in-memory buffer and flushes to Cl
 | **Consumer group** | `analytics-ranking-cg` |
 | **Topic** | `ranking-events` |
 | **Instances** | 5 workers |
-| **Primary responsibility** | Update `leaderboard_display` and `game_history.elo_delta` on `EloUpdated`, `TournamentEloUpdated`, `EloReverted` |
+| **Primary responsibility** | Insert into `elo_history` on `EloUpdated`, `TournamentEloUpdated`, `EloReverted` (historical record only; no leaderboard sorted set writes) |
 
 ### 2.4 `analytics-service`
 
@@ -241,9 +241,9 @@ All other `game-events` event types are ignored by Analytics. The `GameCompleted
 
 | Event | Action |
 |---|---|
-| `EloUpdated` | INSERT into `elo_history`; update `leaderboard_display` Redis sorted set |
+| `EloUpdated` | INSERT into `elo_history` |
 | `TournamentEloUpdated` | INSERT into `elo_history` (tournament variant) |
-| `EloReverted` | INSERT corrective row into `elo_history` (`reverted = true`); update leaderboard sorted set |
+| `EloReverted` | INSERT corrective row into `elo_history` (`reverted = true`) |
 
 ### 5.4 From `moderation-events` (consumer group `analytics-moderation-cg`)
 
@@ -327,7 +327,7 @@ Response: ordered list of players with match results within the round.
 GET /v1/analytics/leaderboard?type=casual&limit=100
 
 Response: top-N players by Elo with rank and score.
-Data source: Redis ZRANGE ... REV WITHSCORES on analytics:leaderboard:casual.
+Data source: Redis ZRANGE ... REV WITHSCORES on ranking:leaderboard:casual (read from Ranking's Leaderboard Redis instance; no analytics copy maintained).
 ```
 
 ---

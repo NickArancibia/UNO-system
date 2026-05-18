@@ -39,9 +39,10 @@ Ranking owns the `EloRecord` aggregate — the authoritative source of player El
 | `ranking-game-consumer-worker` | In-process background thread | Consumes `game-events` Kafka topic (consumer group `ranking-cg`) for `GameCompleted` |
 | `ranking-tournament-consumer-worker` | In-process background thread | Consumes `tournament-events` Kafka topic (consumer group `ranking-tournament-cg`) for `TournamentCompleted`, `TournamentCancelled` |
 | `ranking-moderation-consumer-worker` | In-process background thread | Consumes `moderation-events` Kafka topic (consumer group `ranking-moderation-cg`) for `GameResultVoided` |
+| `ranking-identity-consumer-worker` | In-process background thread | Consumes `identity-events` Kafka topic (consumer group `ranking-identity-cg`) for `PlayerRegistered` |
 | `ranking-outbox-relay-worker` | In-process background thread | Reads undelivered outbox rows, publishes to `ranking-events` Kafka topic, marks rows delivered |
 
-All five run in the same deployed container.
+All six run in the same deployed container.
 
 ---
 
@@ -79,7 +80,6 @@ Topic partitioned by `game_id`; 100 partitions; 20 consumer instances.
 | Event | Idempotency key | Action |
 |---|---|---|
 | `GameCompleted` | `game_id` | If `game_type = 'casual'` AND `outcome = 'completed'`: compute casual Elo delta for all players (forfeited players receive rank N — last place). If `game_type = 'casual'` AND `outcome = 'abandoned'`: skip Elo entirely (no winner was determined). Tournament games (`game_type = 'tournament'`) do **not** trigger casual Elo updates regardless of `outcome`. |
-| `PlayerRegistered` | `player_id` | Initialize `EloRecord` with starting Elo (1,000) for the new player. |
 
 ### 4.3 Events Consumed from `tournament-events`
 
@@ -97,6 +97,15 @@ Consumer group: `ranking-moderation-cg`
 | Event | Idempotency key | Action |
 |---|---|---|
 | `GameResultVoided` | `game_id` | Reverse the Elo delta applied for this game. Look up original delta from `elo_processing_log`. Emit `EloReverted` per affected player. Skip if `game_id` already flagged as voided. |
+
+### 4.5 Events Consumed from `identity-events`
+
+Consumer group: `ranking-identity-cg`  
+Topic partitioned by `player_id`; 10 partitions.
+
+| Event | Idempotency key | Action |
+|---|---|---|
+| `PlayerRegistered` | `player_id` | Initialize `EloRecord` with starting Elo (1,000) for the new player. Idempotent: INSERT … ON CONFLICT DO NOTHING. |
 
 ---
 

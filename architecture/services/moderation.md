@@ -22,7 +22,7 @@ Moderation owns the admin audit log and issues corrective commands to upstream c
 - Tournament lifecycle (owned by Tournament Orchestration; Moderation can request `CancelTournament`)
 - Elo records (owned by Ranking; Moderation triggers `EloReverted` via `GameResultVoided` event)
 
-**Key constraint:** All admin endpoints require a JWT with an `admin` role claim. Every action is logged to the `admin_actions` audit table **within the same PostgreSQL transaction** as the corrective command dispatch (write-before-effect). If the corrective command fails, the audit row is marked `failed` and the admin is notified.
+**Key constraint:** All admin endpoints require a JWT with an `admin` role claim. Every action is durably logged to the `admin_actions` audit table **before** the corrective command is dispatched (write-before-effect). The audit row is committed in its own transaction so no PostgreSQL lock is held during the HTTP call. A second transaction updates the row to `completed` or `failed` after the call returns. If the corrective command fails, the audit row is marked `failed` and the admin is notified.
 
 ---
 
@@ -132,15 +132,21 @@ The escalation policy is configurable via environment variables, not hardcoded.
 
 ### 5.2 Write-Before-Effect Invariant
 
-Every admin action follows this transactional sequence:
+Every admin action that dispatches an HTTP corrective command follows a **two-transaction** sequence so that no PostgreSQL lock is held during a network call:
 
-1. **BEGIN** PostgreSQL transaction.
-2. **INSERT** into `admin_actions` (audit row with `status = 'pending'`).
-3. **Dispatch** the corrective command to the upstream service (HTTP call to Identity/Session, Tournament Orchestration, or internal outbox write for `GameResultVoided`).
-4. If dispatch succeeds: **UPDATE** `admin_actions` SET `status = 'completed'`, `completed_at = now()`.
-5. **COMMIT**.
+1. **BEGIN** first transaction.
+2. **INSERT** into `admin_actions` (audit row with `status = 'dispatching'`).
+3. **COMMIT** — the audit row is durable before any downstream call.
+4. **HTTP call** to the upstream service (outside any transaction): Identity/Session, Tournament Orchestration, or Room Gameplay.
+5. **BEGIN** second transaction.
+6. **UPDATE** `admin_actions` SET `status = 'completed'` / `'failed'`, `completed_at = now()`.
+7. **COMMIT**.
 
-If the upstream call fails (timeout, 5xx): the audit row remains with `status = 'failed'`. The admin is notified and can manually retry. The corrective command is **never** executed without the audit row being durably written first.
+If the service crashes between steps 3 and 6, the row remains with `status = 'dispatching'`. A background sweep (every 60s) queries `admin_actions WHERE status = 'dispatching' AND created_at < now() - INTERVAL '5 minutes'` and alerts the on-call operator to review and manually complete or void the action.
+
+**For `GameResultVoided` and `GameFlagged`** (internal Kafka events): the audit row and the outbox row are written in a **single** transaction (no HTTP call, so no lock-duration issue). The `status` goes directly from `'dispatching'` to `'completed'` in the same commit.
+
+The corrective command is **never** dispatched without the audit row being durably written first.
 
 **For FlagGame (player-facing):** the same write-before-effect pattern applies — the flag is written to the `game_flags` table before the `GameFlagged` outbox row is inserted, both in the same transaction.
 
@@ -168,7 +174,7 @@ CREATE TABLE admin_actions (
     target_id       UUID NOT NULL,      -- player_id or tournament_id or game_id
     target_type     TEXT NOT NULL,      -- 'player', 'tournament', 'game'
     reason          TEXT NOT NULL,
-    status          TEXT NOT NULL DEFAULT 'pending',  -- 'pending' | 'completed' | 'failed'
+    status          TEXT NOT NULL DEFAULT 'dispatching',  -- 'dispatching' | 'completed' | 'failed'
     created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
     completed_at    TIMESTAMPTZ
 );
