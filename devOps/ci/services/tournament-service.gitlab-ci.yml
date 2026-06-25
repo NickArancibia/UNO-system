@@ -1,4 +1,4 @@
-tournament-serviceest:
+tournament-service:test:
   extends:
     - .variables_template
     - .py_test_template
@@ -19,7 +19,7 @@ tournament-service:build:
   variables:
     SERVICE_NAME: tournament-service
     SERVICE_DIR: devOps/tournament-service
-  needs: ["tournament-serviceest"]
+  needs: ["tournament-service:test"]
   rules:
     - changes:
         - devOps/tournament-service/**/*

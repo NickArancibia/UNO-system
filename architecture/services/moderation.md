@@ -243,7 +243,7 @@ Per [`specs/CONSTRAINTS.md`](../../specs/CONSTRAINTS.md) §10 and [PLAN.md](../P
 | `ratelimit:user:<player_id>:flag:<bucket>` | String + INCR | 3600s (1 hour window) |
 | `ratelimit:game:<player_id>:<action>:<bucket>` | String + INCR | 60s |
 
-**Fail-open policy:** If Redis is unavailable, per-IP and per-user rate limits fail open (availability > precision). Per-game-action domain limits are enforced in application code and do not depend on Redis.
+**Fail-open policy:** If Redis is unavailable, the API Gateway switches per-IP and per-user limits to a small local in-memory counter per gateway pod for up to 5 minutes (`player_id` / IP → fixed 60s bucket). This protects a single pod from obvious floods but does not coordinate globally, so the blast radius is bounded by the number of gateway pods an attacker can reach. If local memory pressure rises or the outage exceeds 5 minutes, limits fully fail open for availability and Moderation treats the Redis outage as an abuse-observability gap. Per-game-action domain limits are still enforced in Room Gameplay and do not depend on Redis.
 
 ---
 

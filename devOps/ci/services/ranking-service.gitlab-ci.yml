@@ -1,4 +1,4 @@
-ranking-serviceest:
+ranking-service:test:
   extends:
     - .variables_template
     - .py_test_template
@@ -19,7 +19,7 @@ ranking-service:build:
   variables:
     SERVICE_NAME: ranking-service
     SERVICE_DIR: devOps/ranking-service
-  needs: ["ranking-serviceest"]
+  needs: ["ranking-service:test"]
   rules:
     - changes:
         - devOps/ranking-service/**/*

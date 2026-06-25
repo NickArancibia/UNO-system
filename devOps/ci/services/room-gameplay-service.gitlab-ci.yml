@@ -1,4 +1,4 @@
-room-gameplay-serviceest:
+room-gameplay-service:test:
   extends:
     - .variables_template
     - .py_test_template
@@ -19,7 +19,7 @@ room-gameplay-service:build:
   variables:
     SERVICE_NAME: room-gameplay-service
     SERVICE_DIR: devOps/room-gameplay-service
-  needs: ["room-gameplay-serviceest"]
+  needs: ["room-gameplay-service:test"]
   rules:
     - changes:
         - devOps/room-gameplay-service/**/*

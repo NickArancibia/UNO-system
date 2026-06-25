@@ -158,10 +158,16 @@ Multiple `spectator-service` instances may read from the same stream simultaneou
 
 **Initial connect:**
 1. Spectator connects WebSocket to `spectator-service`.
-2. `spectator-service` reads `HGETALL spectator:gameview:{game_id}` from Redis (current PublicGameView).
-3. `spectator-service` sends the snapshot to the client and records the snapshot's `state_version`.
-4. `spectator-service` begins `XREAD BLOCK ... STREAMS spectator:stream:{game_id} $` for all events with stream IDs after the snapshot.
+2. `spectator-service` reads `HGETALL spectator:gameview:{game_id}` from Redis (current PublicGameView), including `state_version` and `last_stream_id` written by the projection worker in the same update batch as the Hash fields.
+3. `spectator-service` sends the snapshot to the client and records the snapshot's `state_version` and `last_stream_id`.
+4. `spectator-service` begins `XREAD BLOCK ... STREAMS spectator:stream:{game_id} {last_stream_id}` so events committed after the snapshot are not missed.
 5. Client receives a continuous stream of filtered events.
+
+**Late join mid-game:**
+1. The first payload is always a snapshot from `spectator:gameview:{game_id}`, not a full stream replay from `0-0`.
+2. The service then tails the Redis Stream from the snapshot's `last_stream_id`.
+3. If the Hash is missing but the stream still exists, the service reconstructs a bounded snapshot by reading `XREAD COUNT 200 STREAMS spectator:stream:{game_id} 0-0`; if neither exists, it returns `404 game_not_available`.
+4. Redis retains approximately the last 200 filtered events per game plus a 24h post-completion TTL. This is enough for reconnect catch-up, while late joins use snapshot+delta to avoid replaying an entire active game.
 
 **Reconnect after disconnect:**
 1. Client reconnects with `?last_id={last_received_stream_id}` in the WebSocket handshake URL.

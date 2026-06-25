@@ -1,4 +1,4 @@
-analytics-serviceest:
+analytics-service:test:
   extends:
     - .variables_template
     - .py_test_template
@@ -19,7 +19,7 @@ analytics-service:build:
   variables:
     SERVICE_NAME: analytics-service
     SERVICE_DIR: devOps/analytics-service
-  needs: ["analytics-serviceest"]
+  needs: ["analytics-service:test"]
   rules:
     - changes:
         - devOps/analytics-service/**/*

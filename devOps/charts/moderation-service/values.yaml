@@ -3,6 +3,7 @@ replicaCount: 1
 image:
   repository: registry.example.com/uno-system/moderation-service
   tag: latest
+  digest: ""
   pullPolicy: IfNotPresent
 
 service:

@@ -10,21 +10,31 @@ default:
   script:
     - cd "$SERVICE_DIR"
     - pip install --no-cache-dir -r requirements.txt
+    - python -m compileall app.py tests
     - python -m pytest -q
 
 .build_template:
   stage: build
   script:
-    - echo "Build step for $SERVICE_NAME"
-    - test -f "$SERVICE_DIR/Dockerfile"
+    - cd "$SERVICE_DIR"
+    - pip install --no-cache-dir -r requirements.txt
+    - python -m compileall app.py
+    - test -f Dockerfile
 
 .deliver_template:
   stage: deliver
+  image:
+    name: gcr.io/kaniko-project/executor:v1.23.2-debug
+    entrypoint: [""]
   script:
-    - echo "Deliver image for $SERVICE_NAME"
+    - mkdir -p /kaniko/.docker
+    - echo "{\"auths\":{\"$CI_REGISTRY\":{\"username\":\"$CI_REGISTRY_USER\",\"password\":\"$CI_REGISTRY_PASSWORD\"}}}" > /kaniko/.docker/config.json
+    - /kaniko/executor --context "$CI_PROJECT_DIR/$SERVICE_DIR" --dockerfile "$CI_PROJECT_DIR/$SERVICE_DIR/Dockerfile" --destination "$CI_REGISTRY_IMAGE/$SERVICE_NAME:$IMAGE_TAG" --digest-file image.digest
     - echo "IMAGE_REPOSITORY=$CI_REGISTRY_IMAGE/$SERVICE_NAME" > image.env
     - echo "IMAGE_TAG=$IMAGE_TAG" >> image.env
-    - echo "IMAGE_DIGEST=sha256:${CI_COMMIT_SHA}$(printf '%08s' 0)" >> image.env
+    - echo "IMAGE_DIGEST=$(cat image.digest)" >> image.env
   artifacts:
     reports:
       dotenv: image.env
+    paths:
+      - image.digest

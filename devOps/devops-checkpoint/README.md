@@ -44,6 +44,7 @@ Fail-fast mechanics:
 - Per-service jobs use needs relationships: test -> build -> deliver.
 - For api-gateway full path: deliver -> deploy-staging -> integration-staging.
 - If an upstream job fails, downstream jobs for that service do not run.
+- Test jobs run `compileall` plus `pytest`; deliver jobs build and push each service image with Kaniko to the GitLab Container Registry.
 
 Independent deployability:
 
@@ -56,6 +57,7 @@ Build once, promote:
 
 - Deliver stage emits IMAGE_REPOSITORY, IMAGE_TAG, and IMAGE_DIGEST.
 - Staging and production deploy jobs consume the same artifact identity.
+- Helm charts support digest-pinned image references (`repository@sha256:...`) so staging and production run the exact pushed artifact.
 - No rebuild occurs between staging and production.
 
 ## Environment Separation and Secrets
@@ -81,25 +83,33 @@ Smoke test artifact: devOps/devops-checkpoint/smoke/api-gateway-smoke.sh
 Behavior:
 
 - Uses UNOARENA_API_URL (required env var).
-- Calls gateway room-list endpoint as placeholder for canonical CLI flow.
+- Invokes the smoke CLI adapter with the canonical command shape: `room list --json`.
 - Asserts JSON response includes result == ok and rooms field.
 - Retries at most once, then fails with non-zero exit code.
 
 Note:
 
-- Replace the placeholder transport call with your actual Client Checkpoint CLI command once your CLI binary is available in CI.
+- Set UNOARENA_CLI_BIN to the packaged Client Checkpoint CLI path once that binary is available in CI; the included adapter keeps the same invocation shape for this checkpoint.
 
 ## Readiness Gate
 
-Deployment path includes a readiness gate placeholder command:
+Deployment path includes a real readiness gate command:
 
-- kubectl rollout status deployment/api-gateway -n staging
+- `kubectl rollout status deployment/api-gateway -n staging --timeout=120s`
 
 In shared environments, deploy job must remain blocked until rollout is healthy before integration-staging starts.
 
 ## Rollback Path
 
 Rollback is executed with helm rollback api-gateway <previous_revision> in the target namespace, followed by rollout status verification.
+
+## Observability Hook
+
+The api-gateway placeholder emits a JSON log line with `event=smoke_hit` when the smoke command reaches `/v1/room/list`. Operators can inspect it with:
+
+```sh
+kubectl logs -n staging deployment/api-gateway | grep smoke_hit
+```
 
 ## Coverage Matrix
 

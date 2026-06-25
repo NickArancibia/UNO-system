@@ -1,4 +1,4 @@
-moderation-serviceest:
+moderation-service:test:
   extends:
     - .variables_template
     - .py_test_template
@@ -19,7 +19,7 @@ moderation-service:build:
   variables:
     SERVICE_NAME: moderation-service
     SERVICE_DIR: devOps/moderation-service
-  needs: ["moderation-serviceest"]
+  needs: ["moderation-service:test"]
   rules:
     - changes:
         - devOps/moderation-service/**/*

@@ -1,5 +1,7 @@
 from flask import Flask, jsonify
+import json
 import os
+import sys
 
 app = Flask(__name__)
 SERVICE_NAME = os.getenv("SERVICE_NAME", "api-gateway")
@@ -12,11 +14,13 @@ def health():
 
 @app.get("/v1/whoami")
 def whoami():
+    print(json.dumps({"event": "smoke_hit", "endpoint": "/v1/whoami", "service": SERVICE_NAME}), file=sys.stdout, flush=True)
     return jsonify({"result": "ok", "service": SERVICE_NAME, "user": "stub-user"})
 
 
 @app.get("/v1/room/list")
 def room_list():
+    print(json.dumps({"event": "smoke_hit", "endpoint": "/v1/room/list", "service": SERVICE_NAME}), file=sys.stdout, flush=True)
     return jsonify({"result": "ok", "rooms": []})
 
 

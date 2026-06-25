@@ -1,4 +1,4 @@
-identity-serviceest:
+identity-service:test:
   extends:
     - .variables_template
     - .py_test_template
@@ -19,7 +19,7 @@ identity-service:build:
   variables:
     SERVICE_NAME: identity-service
     SERVICE_DIR: devOps/identity-service
-  needs: ["identity-serviceest"]
+  needs: ["identity-service:test"]
   rules:
     - changes:
         - devOps/identity-service/**/*

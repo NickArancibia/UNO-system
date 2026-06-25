@@ -66,6 +66,21 @@ All game commands return:
 - `422 Unprocessable Entity` if the command is invalid (illegal play, wrong turn, etc.).
 - `200 OK` (original result) if the `idempotency_key` was already processed.
 
+### 3.1.1 409 Reconciliation Contract
+
+A `409 Conflict` response includes the authoritative `current_state_version`, the rejected `client_state_version`, and a `reconcile_url`:
+
+```json
+{
+  "error": "stale_state_version",
+  "client_state_version": 41,
+  "current_state_version": 44,
+  "reconcile_url": "/v1/games/{game_id}/events?from_state_version=42"
+}
+```
+
+On receipt, the client calls `GET /v1/games/{game_id}/events?from_state_version={client_state_version + 1}&limit=200`, replays the missed public events in order, updates its local `state_version`, and retries only if the original command is still legal. If the gap is larger than the retained event page or the client cannot replay cleanly, it calls `GET /v1/games/{game_id}/state` for a fresh authoritative `PublicGameView` snapshot before sending further commands. The Gateway surfaces both endpoints unchanged; Room Gameplay remains the source of truth for event ordering.
+
 ### 3.2 Room / Queue Commands (REST)
 
 | Command | Method + Path | Notes |

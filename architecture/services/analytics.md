@@ -119,6 +119,8 @@ ClickHouse insert failures (e.g., node overload) cause the worker to pause and r
 
 If ClickHouse is unavailable for >5 minutes, `analytics-game-worker` pauses consumption and alerts. Analytics read models become stale but no data is lost (Kafka retention = 7 days for `game-events`).
 
+**Contractual staleness SLO:** Player-facing analytics and tournament statistics are guaranteed to be no more than 10 minutes stale at P99, including the 100K `GameCompleted` round-end burst. The expected burst is ~1,666 rows/s while the ClickHouse cluster accepts 100K+ rows/s per node with 500ms batch flushes, so normal lag should drain within seconds. If lag exceeds 10 minutes, read endpoints continue serving the latest completed materialized view with `stale=true`, `as_of`, and `lag_seconds` fields rather than blocking gameplay, standings, or tournament completion paths. Admin dashboards surface the lag; public reads degrade gracefully to the last known snapshot.
+
 ---
 
 ## 4. Persistence: ClickHouse

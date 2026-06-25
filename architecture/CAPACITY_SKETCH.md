@@ -71,6 +71,8 @@ Each command = one PostgreSQL row lock acquisition + transaction commit + Redis 
 | **analytics-worker** | Yes (dedicated consumer group) | ClickHouse insert throughput | 20 pods × 5 partitions each |
 | **moderation-service** | Singleton acceptable | — | 1–2 pods (low throughput) |
 
+**Moderation singleton failure mode:** Admin actions are low-frequency but side-effecting, so the singleton is safe only because of write-before-effect ordering. A pod crash before the audit row commits means no corrective command was dispatched; the admin retries. A crash after the audit row commits but before the downstream HTTP call leaves `admin_actions.status = 'dispatching'`; the 60s recovery sweep marks it for operator review before any replay. A crash after the downstream call but before completion update is reconciled by re-reading the target service's idempotent command result and then marking the row `completed` or `failed`. In-flight admin actions are therefore not silently dropped; they are either retried by a human or reconciled from the durable audit log.
+
 ---
 
 ## 5. Gameplay PostgreSQL — Sharding Strategy

@@ -1,4 +1,4 @@
-spectator-serviceest:
+spectator-service:test:
   extends:
     - .variables_template
     - .py_test_template
@@ -19,7 +19,7 @@ spectator-service:build:
   variables:
     SERVICE_NAME: spectator-service
     SERVICE_DIR: devOps/spectator-service
-  needs: ["spectator-serviceest"]
+  needs: ["spectator-service:test"]
   rules:
     - changes:
         - devOps/spectator-service/**/*

@@ -260,7 +260,7 @@ The `spectator-game-consumer-worker` applies the privacy whitelist filter before
 
 ### 6.2 Consistency Model
 
-**Eventual.** The analytics pipeline is a downstream read model with no influence on write-side consistency. At burst (100K `GameCompleted` at round end), ClickHouse batch inserts may lag seconds behind real-time; this is acceptable for analytics use cases.
+**Eventual with a contractual staleness bound.** The analytics pipeline is a downstream read model with no influence on write-side consistency. At burst (100K `GameCompleted` at round end), ClickHouse batch inserts are expected to lag seconds behind real-time and must remain within a 10-minute P99 freshness SLO. If Kafka lag or ClickHouse retry delay pushes freshness beyond 10 minutes, analytics read APIs serve the last completed materialized view with `stale=true`, `as_of`, and `lag_seconds` metadata instead of blocking gameplay, standings, or tournament completion paths.
 
 ### 6.3 Spike Absorption
 

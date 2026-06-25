@@ -162,6 +162,8 @@ Every `api-gateway` instance subscribes to `PSUBSCRIBE session:invalidated:*` on
 
 **This is acceptable.** The DB is the source of truth for token validity. Pub/Sub is the fast-path to terminate live connections without waiting for the next command. Security is not weakened by a missed message — the worst case is the old connection persisting until it next submits a command.
 
+**Worst-case exposure window:** If all Gateway instances miss the Pub/Sub invalidation (for example, Redis restarts during publish), an old WebSocket can coexist with the new session until either its next inbound command triggers JWT revalidation or the Gateway's 30s outbound heartbeat rechecks `valid_sessions_from` and closes it. New HTTP/WebSocket requests with the old JWT are rejected as soon as the cache is invalidated or expires; the absolute stale-cache bound remains the 60s JWT validation cache TTL. Therefore dual-session coexistence is bounded by 30s for live connections that receive heartbeats, and by 60s for purely idle cached authorization state; it never extends past the JWT's own expiration.
+
 ### Why Redis Pub/Sub over Alternatives
 
 Full rationale in [ADR-005](../adr/ADR-005-session-invalidation-push.md).

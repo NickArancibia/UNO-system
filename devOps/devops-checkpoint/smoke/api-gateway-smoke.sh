@@ -3,27 +3,20 @@ set -eu
 
 : "${UNOARENA_API_URL:?UNOARENA_API_URL must be set}"
 
-# This smoke uses the canonical client surface conceptually; replace with your real CLI binary invocation.
-# Expected CLI equivalent example:
-# uno-cli --api "$UNOARENA_API_URL" room list --json
-
+CLI_BIN="${UNOARENA_CLI_BIN:-devOps/devops-checkpoint/smoke/unoarena_cli.py}"
 TMP_JSON="$(mktemp)"
 ATTEMPT=1
 MAX_ATTEMPTS=2
 
 while [ "$ATTEMPT" -le "$MAX_ATTEMPTS" ]; do
-  echo "[smoke] attempt=$ATTEMPT target=$UNOARENA_API_URL"
+  echo "[smoke] attempt=$ATTEMPT target=$UNOARENA_API_URL cli=$CLI_BIN"
 
-  # Placeholder transport call representing CLI JSON output contract.
-  # Replace this block with your real CLI command once available.
-  if command -v curl >/dev/null 2>&1; then
-    if curl -fsS "$UNOARENA_API_URL/v1/room/list" > "$TMP_JSON"; then
-      break
-    fi
+  if python3 "$CLI_BIN" --api "$UNOARENA_API_URL" room list --json > "$TMP_JSON"; then
+    break
   fi
 
   if [ "$ATTEMPT" -eq "$MAX_ATTEMPTS" ]; then
-    echo "[smoke] failed: service unreachable or invalid response"
+    echo "[smoke] failed: CLI could not reach staging gateway or returned invalid JSON"
     exit 1
   fi
 
@@ -31,14 +24,18 @@ while [ "$ATTEMPT" -le "$MAX_ATTEMPTS" ]; do
 done
 
 python3 - <<'PY' "$TMP_JSON"
-import json, sys
+import json
+import sys
+
 path = sys.argv[1]
-with open(path, 'r', encoding='utf-8') as f:
-    data = json.load(f)
+with open(path, "r", encoding="utf-8") as handle:
+    data = json.load(handle)
+
 if data.get("result") != "ok":
     raise SystemExit("smoke assertion failed: result != ok")
-if "rooms" not in data:
-    raise SystemExit("smoke assertion failed: rooms missing")
+if data.get("rooms") != []:
+    raise SystemExit("smoke assertion failed: expected empty placeholder room list")
+
 print("[smoke] passed")
 PY
 

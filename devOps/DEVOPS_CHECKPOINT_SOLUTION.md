@@ -34,18 +34,18 @@ Rationale:
 
 Recommended structure:
 
-- api-gateway/
-- identity-service/
-- room-gameplay-service/
-- tournament-service/
-- spectator-service/
-- ranking-service/
-- analytics-service/
-- moderation-service/
-- ci/templates/
-- ci/services/
-- deploy/charts/
-- devops-checkpoint/smoke/
+- devOps/api-gateway/
+- devOps/identity-service/
+- devOps/room-gameplay-service/
+- devOps/tournament-service/
+- devOps/spectator-service/
+- devOps/ranking-service/
+- devOps/analytics-service/
+- devOps/moderation-service/
+- devOps/ci/templates/
+- devOps/ci/services/
+- devOps/charts/
+- devOps/devops-checkpoint/smoke/
 
 Each service folder contains:
 
@@ -61,14 +61,14 @@ For api-gateway only:
 
 | Architecture service | Source folder | Pipeline fragment | Helm chart | Container image | Helm release | Wiring depth |
 |---|---|---|---|---|---|---|
-| api-gateway | api-gateway | ci/services/api-gateway.gitlab-ci.yml | deploy/charts/api-gateway | registry/group/project/api-gateway | api-gateway | test, build, deliver, deploy-staging, integration-staging, optional production |
-| identity-service | identity-service | ci/services/identity-service.gitlab-ci.yml | deploy/charts/identity-service | registry/group/project/identity-service | identity-service | test, build, deliver |
-| room-gameplay-service | room-gameplay-service | ci/services/room-gameplay-service.gitlab-ci.yml | deploy/charts/room-gameplay-service | registry/group/project/room-gameplay-service | room-gameplay-service | test, build, deliver |
-| tournament-service | tournament-service | ci/services/tournament-service.gitlab-ci.yml | deploy/charts/tournament-service | registry/group/project/tournament-service | tournament-service | test, build, deliver |
-| spectator-service | spectator-service | ci/services/spectator-service.gitlab-ci.yml | deploy/charts/spectator-service | registry/group/project/spectator-service | spectator-service | test, build, deliver |
-| ranking-service | ranking-service | ci/services/ranking-service.gitlab-ci.yml | deploy/charts/ranking-service | registry/group/project/ranking-service | ranking-service | test, build, deliver |
-| analytics-service | analytics-service | ci/services/analytics-service.gitlab-ci.yml | deploy/charts/analytics-service | registry/group/project/analytics-service | analytics-service | test, build, deliver |
-| moderation-service | moderation-service | ci/services/moderation-service.gitlab-ci.yml | deploy/charts/moderation-service | registry/group/project/moderation-service | moderation-service | test, build, deliver |
+| api-gateway | devOps/api-gateway | devOps/ci/services/api-gateway.gitlab-ci.yml | devOps/charts/api-gateway | $CI_REGISTRY_IMAGE/api-gateway | api-gateway | test, build, deliver, deploy-staging, integration-staging, optional production |
+| identity-service | devOps/identity-service | devOps/ci/services/identity-service.gitlab-ci.yml | devOps/charts/identity-service | $CI_REGISTRY_IMAGE/identity-service | identity-service | test, build, deliver |
+| room-gameplay-service | devOps/room-gameplay-service | devOps/ci/services/room-gameplay-service.gitlab-ci.yml | devOps/charts/room-gameplay-service | $CI_REGISTRY_IMAGE/room-gameplay-service | room-gameplay-service | test, build, deliver |
+| tournament-service | devOps/tournament-service | devOps/ci/services/tournament-service.gitlab-ci.yml | devOps/charts/tournament-service | $CI_REGISTRY_IMAGE/tournament-service | tournament-service | test, build, deliver |
+| spectator-service | devOps/spectator-service | devOps/ci/services/spectator-service.gitlab-ci.yml | devOps/charts/spectator-service | $CI_REGISTRY_IMAGE/spectator-service | spectator-service | test, build, deliver |
+| ranking-service | devOps/ranking-service | devOps/ci/services/ranking-service.gitlab-ci.yml | devOps/charts/ranking-service | $CI_REGISTRY_IMAGE/ranking-service | ranking-service | test, build, deliver |
+| analytics-service | devOps/analytics-service | devOps/ci/services/analytics-service.gitlab-ci.yml | devOps/charts/analytics-service | $CI_REGISTRY_IMAGE/analytics-service | analytics-service | test, build, deliver |
+| moderation-service | devOps/moderation-service | devOps/ci/services/moderation-service.gitlab-ci.yml | devOps/charts/moderation-service | $CI_REGISTRY_IMAGE/moderation-service | moderation-service | test, build, deliver |
 
 ## 5. Pipeline stage spine
 
@@ -120,8 +120,8 @@ Per service:
 
 - One service equals one container image.
 - Image tags carry readable provenance and immutable identity.
-- Deliver stage exports image digest artifact.
-- Deploy stages consume digest, not mutable tags.
+- Deliver stage uses Kaniko to push the service image and exports the registry digest artifact.
+- Deploy stages consume digest-pinned Helm values, not mutable tags.
 - Staging and production use the same built artifact.
 
 ## 10. Helm deployment requirements
@@ -129,7 +129,7 @@ Per service:
 For api-gateway full path:
 
 - Deploy with helm upgrade --install
-- Gate readiness with rollout status
+- Gate readiness with `kubectl rollout status`
 - Start integration only after healthy rollout
 
 Environment separation:
@@ -149,7 +149,7 @@ Rollback path:
 
 Smoke test requirements:
 
-- Use Client CLI command against staging URL from UNOARENA_API_URL
+- Use Client CLI command shape against staging URL from UNOARENA_API_URL
 - Use JSON output mode
 - Assert canned response fields
 - Fail non-zero on unreachable service, timeout, or payload mismatch
@@ -160,6 +160,8 @@ Recommended flow:
 1. Invoke CLI against api-gateway, for example whoami in JSON mode.
 2. Validate result and expected payload fields.
 3. Emit clear pass or fail status.
+
+The included `devops-checkpoint/smoke/unoarena_cli.py` is a CI adapter for the Client Checkpoint command shape until the packaged client binary is copied into the repo; set `UNOARENA_CLI_BIN` to the real binary path when available.
 
 ## 12. Observability seam
 
@@ -193,10 +195,8 @@ Recommended flow:
 
 - integration-staging successful pipeline URL: TO_BE_FILLED
 
-## 16. Suggested next implementation order
+## 16. Submission follow-up
 
-1. Scaffold service placeholders and Dockerfiles
-2. Add Helm charts and staging or production values
-3. Add root CI and per-service CI fragments
-4. Implement api-gateway deploy-staging and CLI smoke test
-5. Run first green pipeline and fill evidence URL
+1. Push to GitLab.
+2. Confirm the `api-gateway:integration-staging` job reaches green.
+3. Replace `TO_BE_FILLED` with that green pipeline URL before final submission.

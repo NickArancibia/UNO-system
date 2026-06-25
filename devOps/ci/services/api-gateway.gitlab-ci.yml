@@ -44,15 +44,15 @@ api-gateway:deliver:
 
 api-gateway:deploy-staging:
   stage: deploy-staging
-  image: alpine/helm:3.15.4
+  image: dtzar/helm-kubectl:3.15.4
   variables:
     RELEASE_NAME: api-gateway
     K8S_NAMESPACE: staging
   needs: ["api-gateway:deliver"]
   script:
     - echo "Helm deploy for $RELEASE_NAME in $K8S_NAMESPACE"
-    - helm upgrade --install "$RELEASE_NAME" devOps/charts/api-gateway -f devOps/charts/api-gateway/values.yaml -f devOps/charts/api-gateway/values-staging.yaml --set image.repository="$IMAGE_REPOSITORY" --set image.tag="$IMAGE_TAG" --namespace "$K8S_NAMESPACE" --create-namespace
-    - echo "Readiness gate placeholder: kubectl rollout status deployment/$RELEASE_NAME -n $K8S_NAMESPACE"
+    - helm upgrade --install "$RELEASE_NAME" devOps/charts/api-gateway -f devOps/charts/api-gateway/values.yaml -f devOps/charts/api-gateway/values-staging.yaml --set image.repository="$IMAGE_REPOSITORY" --set image.tag="$IMAGE_TAG" --set image.digest="$IMAGE_DIGEST" --namespace "$K8S_NAMESPACE" --create-namespace
+    - kubectl rollout status "deployment/$RELEASE_NAME" -n "$K8S_NAMESPACE" --timeout=120s
   rules:
     - changes:
         - devOps/api-gateway/**/*
@@ -88,11 +88,12 @@ api-gateway:deliver-production:
 
 api-gateway:deploy-production:
   stage: deploy-production
-  image: alpine/helm:3.15.4
+  image: dtzar/helm-kubectl:3.15.4
   needs: ["api-gateway:deliver-production"]
   script:
     - echo "Deploy production using same digest"
-    - helm upgrade --install api-gateway devOps/charts/api-gateway -f devOps/charts/api-gateway/values.yaml -f devOps/charts/api-gateway/values-production.yaml --set image.repository="$IMAGE_REPOSITORY" --set image.tag="$IMAGE_TAG" --namespace production --create-namespace
+    - helm upgrade --install api-gateway devOps/charts/api-gateway -f devOps/charts/api-gateway/values.yaml -f devOps/charts/api-gateway/values-production.yaml --set image.repository="$IMAGE_REPOSITORY" --set image.tag="$IMAGE_TAG" --set image.digest="$IMAGE_DIGEST" --namespace production --create-namespace
+    - kubectl rollout status deployment/api-gateway -n production --timeout=120s
   when: manual
   allow_failure: false
   rules:

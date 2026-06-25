@@ -68,6 +68,18 @@ When a player reconnects after a disconnection (within the 60-second reconnectio
 
 **Abuse escalation:** When a rate limit is exceeded, the API Gateway emits `ActionRateLimitExceeded` to `identity-events`. Moderation consumes it; after 5 violations in 10 minutes, `PlayerAbuseWarningIssued` is emitted; after 3 warnings in 24 hours, Moderation calls `SuspendPlayer` on Identity/Session. See moderation.md §5.
 
+### 2.2 Adaptive Throttling and Backpressure
+
+Static per-user limits are the steady-state guardrail. The Gateway also applies an adaptive throttle when downstream pressure rises:
+
+| Pressure signal | Threshold | Gateway behavior | Client contract |
+|---|---|---|---|
+| room-gameplay-service command p99 latency | > 200ms for 3 consecutive 10s windows | Halve each active player's sustained game-command allowance; keep `CallUno` and challenge commands at normal priority | Return `429 Too Many Requests` with `Retry-After: 1` and JSON `{ "backoff_ms": 1000 }` for shed commands |
+| Gateway → Room Gameplay pending queue depth | > 10,000 in-flight commands per gateway pod | Stop accepting low-priority commands (`DrawCard`, duplicate `PlayCard` retries without new idempotency keys) until depth falls below 5,000 | Return `503 Service Unavailable` with `{ "retry_after_ms": 2000, "reason": "gameplay_backpressure" }` |
+| Kafka `game-events` outbox relay age | > 30s | Do not block accepted commands, but reduce non-critical fan-out and alert operators | Client command ACK remains durable because PostgreSQL commit already succeeded |
+
+The throttle is feedback-based: when p99 latency returns below 120ms and queue depth below 5,000 for 60 seconds, the Gateway restores limits in 25% increments each minute. This prevents a fixed static limit from overwhelming Room Gameplay during a tournament surge while preserving correctness-critical challenge traffic inside the 5-second window.
+
 ---
 
 ## 3. Integration Table

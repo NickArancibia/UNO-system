@@ -256,6 +256,10 @@ CREATE INDEX ON ranking_outbox (delivered, id) WHERE delivered = false;
 
 **Consistency:** Strong per-player (row-lock on `EloRecord`). Eventually consistent across players (Elo updates for a single game are applied to each player independently). The `elo_processing_log` provides exactly-once processing guarantee: before applying any delta, the consumer checks whether `(game_id, player_id)` already exists in the log. If it does, the event is a duplicate and is skipped.
 
+### 6.1.1 `ranking_outbox` Relay Guarantees
+
+The `ranking-outbox-relay-worker` runs inside each `ranking-service` pod and drains `ranking_outbox WHERE delivered = false ORDER BY id LIMIT 500 FOR UPDATE SKIP LOCKED`. It publishes `EloUpdated`, `TournamentEloUpdated`, and `EloReverted` to the `ranking-events` topic with `player_id` as the partition key, Kafka idempotent producer enabled (`acks=all`, `enable.idempotence=true`), and event idempotency keys matching the source aggregate (`game_id + player_id` or `tournament_id + player_id`). On ACK, the relay marks `delivered=true`; on publish failure it retries with exponential backoff up to 30s and leaves the row undelivered. Rows older than 15 minutes with repeated failures are copied to `ranking_outbox_dlq` and alerted, but not deleted from the primary outbox until an operator resolves them. Downstream consumers therefore get the same at-least-once, idempotent delivery guarantee as `game-events`.
+
 ### 6.2 Redis Leaderboards
 
 | Key | Type | Eviction policy | Update trigger |

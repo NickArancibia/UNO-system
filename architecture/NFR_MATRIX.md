@@ -44,7 +44,22 @@ The 5-second challenge window requires spectators to see `ChallengeWindowOpened`
 | Redis Stream → spectator WebSocket (XREAD BLOCK wakes) | 1ms | |
 | **Total** | **~23ms** | Spectators see the challenge window event within ~25ms of the player playing the card; well within the 5-second window |
 
-### 1.4 Elo Update After Game Completion (Eventual)
+### 1.4 Active Challenge Command Path (End-to-End P99)
+
+The tightest player-facing latency path is `ChallengeUno` / `ChallengeWildDrawFour` inside the 5-second challenge window.
+
+| Step | Budget | Notes |
+|---|---|---|
+| Client sends challenge → API Gateway parses frame | 5ms | Existing WebSocket, no new TLS handshake |
+| Gateway JWT + adaptive throttle check | 3ms | Challenge commands are priority traffic and are not shed before low-priority commands |
+| Gateway → room-gameplay-service command POST | 3ms | HTTP/2 mTLS intra-cluster |
+| room-gameplay-service row lock + state validation | 20ms | Includes stale `state_version` check and idempotency lookup |
+| Redis challenge timer cancellation | 5ms | Delete/fence `gameplay:challenge:<game_id>:<state_version>` after DB decision |
+| PostgreSQL commit + outbox insert | 20ms | Challenge result written to `game_events` and outbox |
+| Response + WebSocket fan-out to active players | 10ms | Gateway pushes result to participants |
+| **Total (challenge path, P99)** | **~66ms** | Target: ≤200ms P99, leaving >4.8s of the 5s window for human reaction |
+
+### 1.5 Elo Update After Game Completion (Eventual)
 
 | Step | Target | Notes |
 |---|---|---|
