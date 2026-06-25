@@ -1,0 +1,63 @@
+ranking-serviceest:
+  extends:
+    - .variables_template
+    - .py_test_template
+  variables:
+    SERVICE_NAME: ranking-service
+    SERVICE_DIR: devOps/ranking-service
+  rules:
+    - changes:
+        - devOps/ranking-service/**/*
+        - devOps/charts/ranking-service/**/*
+        - devOps/ci/templates/**/*
+        - devOps/ci/services/ranking-service.gitlab-ci.yml
+
+ranking-service:build:
+  extends:
+    - .variables_template
+    - .build_template
+  variables:
+    SERVICE_NAME: ranking-service
+    SERVICE_DIR: devOps/ranking-service
+  needs: ["ranking-serviceest"]
+  rules:
+    - changes:
+        - devOps/ranking-service/**/*
+        - devOps/charts/ranking-service/**/*
+        - devOps/ci/templates/**/*
+        - devOps/ci/services/ranking-service.gitlab-ci.yml
+
+ranking-service:deliver:
+  extends:
+    - .variables_template
+    - .deliver_template
+  variables:
+    SERVICE_NAME: ranking-service
+    SERVICE_DIR: devOps/ranking-service
+  needs: ["ranking-service:build"]
+  rules:
+    - changes:
+        - devOps/ranking-service/**/*
+        - devOps/charts/ranking-service/**/*
+        - devOps/ci/templates/**/*
+        - devOps/ci/services/ranking-service.gitlab-ci.yml
+
+ranking-service:deploy-staging:
+  stage: deploy-staging
+  script:
+    - echo "Stubbed deploy-staging for ranking-service (not fully wired in this checkpoint)"
+  when: manual
+  allow_failure: true
+  needs: ["ranking-service:deliver"]
+  rules:
+    - when: never
+
+ranking-service:integration-staging:
+  stage: integration-staging
+  script:
+    - echo "Stubbed integration-staging for ranking-service (not fully wired in this checkpoint)"
+  when: manual
+  allow_failure: true
+  needs: ["ranking-service:deploy-staging"]
+  rules:
+    - when: never

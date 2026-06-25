@@ -1,0 +1,10 @@
+replicaCount: 2
+env:
+  UNOARENA_ENV: production
+resources:
+  requests:
+    cpu: 100m
+    memory: 128Mi
+  limits:
+    cpu: 300m
+    memory: 384Mi

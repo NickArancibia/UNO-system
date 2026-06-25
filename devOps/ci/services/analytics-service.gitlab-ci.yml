@@ -1,0 +1,63 @@
+analytics-serviceest:
+  extends:
+    - .variables_template
+    - .py_test_template
+  variables:
+    SERVICE_NAME: analytics-service
+    SERVICE_DIR: devOps/analytics-service
+  rules:
+    - changes:
+        - devOps/analytics-service/**/*
+        - devOps/charts/analytics-service/**/*
+        - devOps/ci/templates/**/*
+        - devOps/ci/services/analytics-service.gitlab-ci.yml
+
+analytics-service:build:
+  extends:
+    - .variables_template
+    - .build_template
+  variables:
+    SERVICE_NAME: analytics-service
+    SERVICE_DIR: devOps/analytics-service
+  needs: ["analytics-serviceest"]
+  rules:
+    - changes:
+        - devOps/analytics-service/**/*
+        - devOps/charts/analytics-service/**/*
+        - devOps/ci/templates/**/*
+        - devOps/ci/services/analytics-service.gitlab-ci.yml
+
+analytics-service:deliver:
+  extends:
+    - .variables_template
+    - .deliver_template
+  variables:
+    SERVICE_NAME: analytics-service
+    SERVICE_DIR: devOps/analytics-service
+  needs: ["analytics-service:build"]
+  rules:
+    - changes:
+        - devOps/analytics-service/**/*
+        - devOps/charts/analytics-service/**/*
+        - devOps/ci/templates/**/*
+        - devOps/ci/services/analytics-service.gitlab-ci.yml
+
+analytics-service:deploy-staging:
+  stage: deploy-staging
+  script:
+    - echo "Stubbed deploy-staging for analytics-service (not fully wired in this checkpoint)"
+  when: manual
+  allow_failure: true
+  needs: ["analytics-service:deliver"]
+  rules:
+    - when: never
+
+analytics-service:integration-staging:
+  stage: integration-staging
+  script:
+    - echo "Stubbed integration-staging for analytics-service (not fully wired in this checkpoint)"
+  when: manual
+  allow_failure: true
+  needs: ["analytics-service:deploy-staging"]
+  rules:
+    - when: never

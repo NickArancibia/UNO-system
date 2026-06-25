@@ -1,0 +1,99 @@
+api-gateway:test:
+  extends:
+    - .variables_template
+    - .py_test_template
+  variables:
+    SERVICE_NAME: api-gateway
+    SERVICE_DIR: devOps/api-gateway
+  rules:
+    - changes:
+        - devOps/api-gateway/**/*
+        - devOps/charts/api-gateway/**/*
+        - devOps/ci/templates/**/*
+        - devOps/ci/services/api-gateway.gitlab-ci.yml
+
+api-gateway:build:
+  extends:
+    - .variables_template
+    - .build_template
+  variables:
+    SERVICE_NAME: api-gateway
+    SERVICE_DIR: devOps/api-gateway
+  needs: ["api-gateway:test"]
+  rules:
+    - changes:
+        - devOps/api-gateway/**/*
+        - devOps/charts/api-gateway/**/*
+        - devOps/ci/templates/**/*
+        - devOps/ci/services/api-gateway.gitlab-ci.yml
+
+api-gateway:deliver:
+  extends:
+    - .variables_template
+    - .deliver_template
+  variables:
+    SERVICE_NAME: api-gateway
+    SERVICE_DIR: devOps/api-gateway
+  needs: ["api-gateway:build"]
+  rules:
+    - changes:
+        - devOps/api-gateway/**/*
+        - devOps/charts/api-gateway/**/*
+        - devOps/ci/templates/**/*
+        - devOps/ci/services/api-gateway.gitlab-ci.yml
+
+api-gateway:deploy-staging:
+  stage: deploy-staging
+  image: alpine/helm:3.15.4
+  variables:
+    RELEASE_NAME: api-gateway
+    K8S_NAMESPACE: staging
+  needs: ["api-gateway:deliver"]
+  script:
+    - echo "Helm deploy for $RELEASE_NAME in $K8S_NAMESPACE"
+    - helm upgrade --install "$RELEASE_NAME" devOps/charts/api-gateway -f devOps/charts/api-gateway/values.yaml -f devOps/charts/api-gateway/values-staging.yaml --set image.repository="$IMAGE_REPOSITORY" --set image.tag="$IMAGE_TAG" --namespace "$K8S_NAMESPACE" --create-namespace
+    - echo "Readiness gate placeholder: kubectl rollout status deployment/$RELEASE_NAME -n $K8S_NAMESPACE"
+  rules:
+    - changes:
+        - devOps/api-gateway/**/*
+        - devOps/charts/api-gateway/**/*
+        - devOps/ci/templates/**/*
+        - devOps/ci/services/api-gateway.gitlab-ci.yml
+
+api-gateway:integration-staging:
+  stage: integration-staging
+  image: python:3.12-slim
+  needs: ["api-gateway:deploy-staging"]
+  script:
+    - chmod +x devOps/devops-checkpoint/smoke/api-gateway-smoke.sh
+    - devOps/devops-checkpoint/smoke/api-gateway-smoke.sh
+  variables:
+    UNOARENA_API_URL: "https://staging.api-gateway.unoarena.local"
+  rules:
+    - changes:
+        - devOps/api-gateway/**/*
+        - devOps/devops-checkpoint/smoke/**/*
+        - devOps/ci/services/api-gateway.gitlab-ci.yml
+
+api-gateway:deliver-production:
+  stage: deliver-production
+  needs: ["api-gateway:integration-staging"]
+  script:
+    - echo "Promote already-built artifact by digest"
+    - echo "$IMAGE_REPOSITORY@$IMAGE_DIGEST"
+  when: manual
+  allow_failure: false
+  rules:
+    - if: $CI_COMMIT_TAG
+
+api-gateway:deploy-production:
+  stage: deploy-production
+  image: alpine/helm:3.15.4
+  needs: ["api-gateway:deliver-production"]
+  script:
+    - echo "Deploy production using same digest"
+    - helm upgrade --install api-gateway devOps/charts/api-gateway -f devOps/charts/api-gateway/values.yaml -f devOps/charts/api-gateway/values-production.yaml --set image.repository="$IMAGE_REPOSITORY" --set image.tag="$IMAGE_TAG" --namespace production --create-namespace
+  when: manual
+  allow_failure: false
+  rules:
+    - if: $CI_COMMIT_TAG

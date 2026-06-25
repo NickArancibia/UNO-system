@@ -1,0 +1,63 @@
+identity-serviceest:
+  extends:
+    - .variables_template
+    - .py_test_template
+  variables:
+    SERVICE_NAME: identity-service
+    SERVICE_DIR: devOps/identity-service
+  rules:
+    - changes:
+        - devOps/identity-service/**/*
+        - devOps/charts/identity-service/**/*
+        - devOps/ci/templates/**/*
+        - devOps/ci/services/identity-service.gitlab-ci.yml
+
+identity-service:build:
+  extends:
+    - .variables_template
+    - .build_template
+  variables:
+    SERVICE_NAME: identity-service
+    SERVICE_DIR: devOps/identity-service
+  needs: ["identity-serviceest"]
+  rules:
+    - changes:
+        - devOps/identity-service/**/*
+        - devOps/charts/identity-service/**/*
+        - devOps/ci/templates/**/*
+        - devOps/ci/services/identity-service.gitlab-ci.yml
+
+identity-service:deliver:
+  extends:
+    - .variables_template
+    - .deliver_template
+  variables:
+    SERVICE_NAME: identity-service
+    SERVICE_DIR: devOps/identity-service
+  needs: ["identity-service:build"]
+  rules:
+    - changes:
+        - devOps/identity-service/**/*
+        - devOps/charts/identity-service/**/*
+        - devOps/ci/templates/**/*
+        - devOps/ci/services/identity-service.gitlab-ci.yml
+
+identity-service:deploy-staging:
+  stage: deploy-staging
+  script:
+    - echo "Stubbed deploy-staging for identity-service (not fully wired in this checkpoint)"
+  when: manual
+  allow_failure: true
+  needs: ["identity-service:deliver"]
+  rules:
+    - when: never
+
+identity-service:integration-staging:
+  stage: integration-staging
+  script:
+    - echo "Stubbed integration-staging for identity-service (not fully wired in this checkpoint)"
+  when: manual
+  allow_failure: true
+  needs: ["identity-service:deploy-staging"]
+  rules:
+    - when: never

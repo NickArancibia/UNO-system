@@ -1,0 +1,63 @@
+moderation-serviceest:
+  extends:
+    - .variables_template
+    - .py_test_template
+  variables:
+    SERVICE_NAME: moderation-service
+    SERVICE_DIR: devOps/moderation-service
+  rules:
+    - changes:
+        - devOps/moderation-service/**/*
+        - devOps/charts/moderation-service/**/*
+        - devOps/ci/templates/**/*
+        - devOps/ci/services/moderation-service.gitlab-ci.yml
+
+moderation-service:build:
+  extends:
+    - .variables_template
+    - .build_template
+  variables:
+    SERVICE_NAME: moderation-service
+    SERVICE_DIR: devOps/moderation-service
+  needs: ["moderation-serviceest"]
+  rules:
+    - changes:
+        - devOps/moderation-service/**/*
+        - devOps/charts/moderation-service/**/*
+        - devOps/ci/templates/**/*
+        - devOps/ci/services/moderation-service.gitlab-ci.yml
+
+moderation-service:deliver:
+  extends:
+    - .variables_template
+    - .deliver_template
+  variables:
+    SERVICE_NAME: moderation-service
+    SERVICE_DIR: devOps/moderation-service
+  needs: ["moderation-service:build"]
+  rules:
+    - changes:
+        - devOps/moderation-service/**/*
+        - devOps/charts/moderation-service/**/*
+        - devOps/ci/templates/**/*
+        - devOps/ci/services/moderation-service.gitlab-ci.yml
+
+moderation-service:deploy-staging:
+  stage: deploy-staging
+  script:
+    - echo "Stubbed deploy-staging for moderation-service (not fully wired in this checkpoint)"
+  when: manual
+  allow_failure: true
+  needs: ["moderation-service:deliver"]
+  rules:
+    - when: never
+
+moderation-service:integration-staging:
+  stage: integration-staging
+  script:
+    - echo "Stubbed integration-staging for moderation-service (not fully wired in this checkpoint)"
+  when: manual
+  allow_failure: true
+  needs: ["moderation-service:deploy-staging"]
+  rules:
+    - when: never

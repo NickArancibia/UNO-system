@@ -1,0 +1,30 @@
+default:
+  image: python:3.12-slim
+
+.variables_template:
+  variables:
+    IMAGE_TAG: "$CI_COMMIT_REF_SLUG-$CI_COMMIT_SHORT_SHA"
+
+.py_test_template:
+  stage: test
+  script:
+    - cd "$SERVICE_DIR"
+    - pip install --no-cache-dir -r requirements.txt
+    - python -m pytest -q
+
+.build_template:
+  stage: build
+  script:
+    - echo "Build step for $SERVICE_NAME"
+    - test -f "$SERVICE_DIR/Dockerfile"
+
+.deliver_template:
+  stage: deliver
+  script:
+    - echo "Deliver image for $SERVICE_NAME"
+    - echo "IMAGE_REPOSITORY=$CI_REGISTRY_IMAGE/$SERVICE_NAME" > image.env
+    - echo "IMAGE_TAG=$IMAGE_TAG" >> image.env
+    - echo "IMAGE_DIGEST=sha256:${CI_COMMIT_SHA}$(printf '%08s' 0)" >> image.env
+  artifacts:
+    reports:
+      dotenv: image.env

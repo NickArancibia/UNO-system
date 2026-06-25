@@ -1,0 +1,23 @@
+replicaCount: 1
+
+image:
+  repository: registry.example.com/uno-system/moderation-service
+  tag: latest
+  pullPolicy: IfNotPresent
+
+service:
+  type: ClusterIP
+  port: 80
+  targetPort: 8080
+
+env:
+  SERVICE_NAME: moderation-service
+  UNOARENA_ENV: base
+
+resources:
+  requests:
+    cpu: 50m
+    memory: 64Mi
+  limits:
+    cpu: 200m
+    memory: 256Mi

@@ -1,0 +1,63 @@
+room-gameplay-serviceest:
+  extends:
+    - .variables_template
+    - .py_test_template
+  variables:
+    SERVICE_NAME: room-gameplay-service
+    SERVICE_DIR: devOps/room-gameplay-service
+  rules:
+    - changes:
+        - devOps/room-gameplay-service/**/*
+        - devOps/charts/room-gameplay-service/**/*
+        - devOps/ci/templates/**/*
+        - devOps/ci/services/room-gameplay-service.gitlab-ci.yml
+
+room-gameplay-service:build:
+  extends:
+    - .variables_template
+    - .build_template
+  variables:
+    SERVICE_NAME: room-gameplay-service
+    SERVICE_DIR: devOps/room-gameplay-service
+  needs: ["room-gameplay-serviceest"]
+  rules:
+    - changes:
+        - devOps/room-gameplay-service/**/*
+        - devOps/charts/room-gameplay-service/**/*
+        - devOps/ci/templates/**/*
+        - devOps/ci/services/room-gameplay-service.gitlab-ci.yml
+
+room-gameplay-service:deliver:
+  extends:
+    - .variables_template
+    - .deliver_template
+  variables:
+    SERVICE_NAME: room-gameplay-service
+    SERVICE_DIR: devOps/room-gameplay-service
+  needs: ["room-gameplay-service:build"]
+  rules:
+    - changes:
+        - devOps/room-gameplay-service/**/*
+        - devOps/charts/room-gameplay-service/**/*
+        - devOps/ci/templates/**/*
+        - devOps/ci/services/room-gameplay-service.gitlab-ci.yml
+
+room-gameplay-service:deploy-staging:
+  stage: deploy-staging
+  script:
+    - echo "Stubbed deploy-staging for room-gameplay-service (not fully wired in this checkpoint)"
+  when: manual
+  allow_failure: true
+  needs: ["room-gameplay-service:deliver"]
+  rules:
+    - when: never
+
+room-gameplay-service:integration-staging:
+  stage: integration-staging
+  script:
+    - echo "Stubbed integration-staging for room-gameplay-service (not fully wired in this checkpoint)"
+  when: manual
+  allow_failure: true
+  needs: ["room-gameplay-service:deploy-staging"]
+  rules:
+    - when: never

@@ -1,0 +1,63 @@
+tournament-serviceest:
+  extends:
+    - .variables_template
+    - .py_test_template
+  variables:
+    SERVICE_NAME: tournament-service
+    SERVICE_DIR: devOps/tournament-service
+  rules:
+    - changes:
+        - devOps/tournament-service/**/*
+        - devOps/charts/tournament-service/**/*
+        - devOps/ci/templates/**/*
+        - devOps/ci/services/tournament-service.gitlab-ci.yml
+
+tournament-service:build:
+  extends:
+    - .variables_template
+    - .build_template
+  variables:
+    SERVICE_NAME: tournament-service
+    SERVICE_DIR: devOps/tournament-service
+  needs: ["tournament-serviceest"]
+  rules:
+    - changes:
+        - devOps/tournament-service/**/*
+        - devOps/charts/tournament-service/**/*
+        - devOps/ci/templates/**/*
+        - devOps/ci/services/tournament-service.gitlab-ci.yml
+
+tournament-service:deliver:
+  extends:
+    - .variables_template
+    - .deliver_template
+  variables:
+    SERVICE_NAME: tournament-service
+    SERVICE_DIR: devOps/tournament-service
+  needs: ["tournament-service:build"]
+  rules:
+    - changes:
+        - devOps/tournament-service/**/*
+        - devOps/charts/tournament-service/**/*
+        - devOps/ci/templates/**/*
+        - devOps/ci/services/tournament-service.gitlab-ci.yml
+
+tournament-service:deploy-staging:
+  stage: deploy-staging
+  script:
+    - echo "Stubbed deploy-staging for tournament-service (not fully wired in this checkpoint)"
+  when: manual
+  allow_failure: true
+  needs: ["tournament-service:deliver"]
+  rules:
+    - when: never
+
+tournament-service:integration-staging:
+  stage: integration-staging
+  script:
+    - echo "Stubbed integration-staging for tournament-service (not fully wired in this checkpoint)"
+  when: manual
+  allow_failure: true
+  needs: ["tournament-service:deploy-staging"]
+  rules:
+    - when: never

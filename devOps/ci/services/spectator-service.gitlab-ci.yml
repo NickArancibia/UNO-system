@@ -1,0 +1,63 @@
+spectator-serviceest:
+  extends:
+    - .variables_template
+    - .py_test_template
+  variables:
+    SERVICE_NAME: spectator-service
+    SERVICE_DIR: devOps/spectator-service
+  rules:
+    - changes:
+        - devOps/spectator-service/**/*
+        - devOps/charts/spectator-service/**/*
+        - devOps/ci/templates/**/*
+        - devOps/ci/services/spectator-service.gitlab-ci.yml
+
+spectator-service:build:
+  extends:
+    - .variables_template
+    - .build_template
+  variables:
+    SERVICE_NAME: spectator-service
+    SERVICE_DIR: devOps/spectator-service
+  needs: ["spectator-serviceest"]
+  rules:
+    - changes:
+        - devOps/spectator-service/**/*
+        - devOps/charts/spectator-service/**/*
+        - devOps/ci/templates/**/*
+        - devOps/ci/services/spectator-service.gitlab-ci.yml
+
+spectator-service:deliver:
+  extends:
+    - .variables_template
+    - .deliver_template
+  variables:
+    SERVICE_NAME: spectator-service
+    SERVICE_DIR: devOps/spectator-service
+  needs: ["spectator-service:build"]
+  rules:
+    - changes:
+        - devOps/spectator-service/**/*
+        - devOps/charts/spectator-service/**/*
+        - devOps/ci/templates/**/*
+        - devOps/ci/services/spectator-service.gitlab-ci.yml
+
+spectator-service:deploy-staging:
+  stage: deploy-staging
+  script:
+    - echo "Stubbed deploy-staging for spectator-service (not fully wired in this checkpoint)"
+  when: manual
+  allow_failure: true
+  needs: ["spectator-service:deliver"]
+  rules:
+    - when: never
+
+spectator-service:integration-staging:
+  stage: integration-staging
+  script:
+    - echo "Stubbed integration-staging for spectator-service (not fully wired in this checkpoint)"
+  when: manual
+  allow_failure: true
+  needs: ["spectator-service:deploy-staging"]
+  rules:
+    - when: never
